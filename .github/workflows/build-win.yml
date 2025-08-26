@@ -46,10 +46,9 @@ jobs:
           # pip install flask flask-cors pywin32 pyinstaller pyinstaller-hooks-contrib
 
       - name: Build with PyInstaller
-        run: |
-          pyinstaller --onefile --noconsole ^
-            --name PluginServer-${{ matrix.exe_suffix }} ^
-            Plugin.py
+        shell: pwsh
+        run: pyinstaller --onefile --noconsole --name "PluginServer-${{ matrix.exe_suffix }}" Plugin.py
+
 
       - name: List dist
         run: dir dist
