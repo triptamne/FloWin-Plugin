@@ -74,7 +74,7 @@ jobs:
           $outBase   = "PluginServer-Setup-$exeSuffix"
           $issPath   = "installer-$exeSuffix.iss"
 
-                    $content = @"
+          $content = @"
 [Setup]
 AppName=$appName
 AppVersion=$version
@@ -105,8 +105,7 @@ Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescripti
 Filename: "{app}\$exeName"; Description: "Iniciar $appName al finalizar"; Flags: postinstall nowait
 "@
 
-      Set-Content -Path $issPath -Value $content -Encoding UTF8
-
+          Set-Content -Path $issPath -Value $content -Encoding UTF8
 
       - name: Compile installer with Inno Setup
         shell: pwsh
