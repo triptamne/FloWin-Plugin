@@ -1,29 +1,32 @@
-name: Build Windows EXEs (x86 & x64)
+name: Build Win7-Compatible Installers (x86 & x64)
 
 on:
   push:
   workflow_dispatch:
 
 jobs:
-  build-windows:
-    name: Build for ${{ matrix.arch }}
+  build:
+    name: Build ${{ matrix.arch }} (Python ${{ matrix.py }})
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: x86
-            py: "3.10"
+            py: "3.8"
             exe_suffix: "win32"
+            is_arch_allowed: "x86"
+            is_install_64: "no"
           - arch: x64
-            py: "3.10"
+            py: "3.8"
             exe_suffix: "win64"
+            is_arch_allowed: "x64"
+            is_install_64: "yes"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Instala Python con la arquitectura deseada
       - name: Setup Python ${{ matrix.py }} ${{ matrix.arch }}
         uses: actions/setup-python@v5
         with:
@@ -34,27 +37,107 @@ jobs:
         shell: pwsh
         run: |
           python --version
-          python -c "import struct, sys; print('Bits:', 8*struct.calcsize('P'), 'Arch:', '${{ matrix.arch }}')"
+          python - << 'PY'
+          import struct, sys
+          print("Bits:", 8*struct.calcsize('P'), "Platform:", sys.platform)
+          PY
 
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
-          # Si no tienes requirements.txt, descomenta la línea de abajo:
-          # pip install flask flask-cors pywin32 pyinstaller pyinstaller-hooks-contrib
+          if exist requirements.txt (
+            pip install -r requirements.txt
+          ) else (
+            pip install flask flask-cors pywin32 pyinstaller pyinstaller-hooks-contrib
+          )
 
-      - name: Build with PyInstaller
+      # Build en --onedir para reducir falsos positivos y mejorar compatibilidad Win7
+      - name: Build with PyInstaller (--onedir)
         shell: pwsh
-        run: pyinstaller --onefile --noconsole --name "PluginServer-${{ matrix.exe_suffix }}" Plugin.py
+        run: >
+          pyinstaller --onedir --noconsole
+          --name "PluginServer-${{ matrix.exe_suffix }}"
+          Plugin.py
 
-
-      - name: List dist
+      - name: Verify dist contents
         run: dir dist
 
-      - name: Upload artifact
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      # Generamos el script de Inno Setup dinámicamente para cada arquitectura
+      - name: Create Inno Setup script
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\installer | Out-Null
+          $AppName = "Plugin Server"
+          $Version = "1.0.${{ github.run_number }}"
+          $ExeName = "PluginServer-${{ matrix.exe_suffix }}.exe"
+          $SourceDir = "dist\\PluginServer-${{ matrix.exe_suffix }}"
+          $OutputBase = "PluginServer-Setup-${{ matrix.exe_suffix }}"
+          $ArchAllowed = "${{ matrix.is_arch_allowed }}"
+          $Install64 = "${{ matrix.is_install_64 }}"  # yes/no
+
+          $iss = @"
+[Setup]
+AppName={#AppName}
+AppVersion={#AppVersion}
+DefaultDirName={pf}\{#AppName}
+DefaultGroupName={#AppName}
+OutputBaseFilename={#OutputBase}
+OutputDir=dist\installer
+ArchitecturesAllowed={#ArchAllowed}
+ArchitecturesInstallIn64BitMode={#Install64}
+Compression=lzma
+SolidCompression=yes
+DisableDirPage=no
+DisableProgramGroupPage=no
+WizardStyle=modern
+
+[Languages]
+Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+
+[Files]
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{group}\{#AppName}"; Filename: "{app}\{#ExeName}"
+Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#ExeName}"; Tasks: desktopicon
+
+[Tasks]
+Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescription: "Accesos directos:"
+
+[Run]
+Filename: "{app}\{#ExeName}"; Description: "Iniciar {#AppName} al finalizar"; Flags: postinstall nowait
+
+[Code]
+// Nada especial por ahora
+
+#define AppName        "@($AppName)"
+#define AppVersion     "@($Version)"
+#define OutputBase     "@($OutputBase)"
+#define SourceDir      "@($SourceDir)"
+#define ExeName        "@($ExeName)"
+#define ArchAllowed    "@($ArchAllowed)"
+#define Install64      "@($Install64)"
+"@
+
+          $issPath = "installer-${{ matrix.exe_suffix }}.iss"
+          $iss | Out-File -FilePath $issPath -Encoding UTF8
+
+      - name: Compile installer with Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & "$iscc" "installer-${{ matrix.exe_suffix }}.iss"
+
+      - name: List installer output
+        run: dir dist\installer
+
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PluginServer-${{ matrix.exe_suffix }}
-          path: dist/PluginServer-${{ matrix.exe_suffix }}.exe
+          name: PluginServer-Setup-${{ matrix.exe_suffix }}
+          path: dist/installer/PluginServer-Setup-${{ matrix.exe_suffix }}.exe

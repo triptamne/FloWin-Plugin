@@ -22,44 +22,75 @@ def print_ticket():
     except Exception as e:
         return jsonify({"status": "error", "message": f"Fallo al imprimir: {str(e)}"})
 
+def feed_lineas(n=1):
+    return "\x1B\x64" + chr(n)   # ESC d n
+
 def imprimir_ticket_win32(data):
     factura = data.get("factura", {})
     productos = data.get("detalle", [])
 
     empresa = {
-        "nombre": "Farmacia Sexta Avenida",
-        "direccion": "C. 4, Heredia, Los Lagos",
-        "telefono": "2222-3333"
+        "nombre": "FARMACIA SEXTA AVENIDA S.R.L.",
+        "direccion": "HEREDIA CENTRO, COSTADO NORTE MERCADO MUNICIPAL",
+        "identificacion": "3-102-167724"
     }
+
+    ALIGN_LEFT   = "\x1B\x61\x00"
+    ALIGN_CENTER = "\x1B\x61\x01"
+    ALIGN_RIGHT  = "\x1B\x61\x02"
 
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
     cliente = factura.get("NombreCliente", "Consumidor Final")
     identificacion = factura.get("IdentificacionCliente", "")
-    metodo_pago = "Efectivo"  # Ajusta si tienes esa información
+    metodo_pago = factura.get("MetodoPago") 
     total = factura.get("PrecioTotal", 0)
-
+    noFactura = factura.get("NoFactura", "")
+    vendedor = factura.get("Vendedor", "")
 
     contenido = ""
     contenido += "\x1B\x74\x12"  # ESC t 18 → Latin America (page code 18)
+    contenido += ALIGN_CENTER
     contenido += f"{empresa['nombre']}\n"
+    contenido += f"{empresa['identificacion']}\n"
     contenido += f"{empresa['direccion']}\n"
-    contenido += f"Tel: {empresa['telefono']}\n"
-    contenido += f"Fecha: {fecha}\n"
+    contenido += ALIGN_LEFT
     contenido += "-" * 32 + "\n"
-    contenido += f"Cliente: {cliente}\n"
+    contenido += f"FECHA: {fecha}\n"
+    contenido += f"CLIENTE: {cliente}\n"
     if identificacion:
-        contenido += f"ID: {identificacion}\n"
+        contenido += f"IDENTIFICACION: {identificacion}\n"
+    contenido += "-" * 32 + "\n"
+    
+    contenido += f"VENDEDOR: {vendedor}\n"
+    contenido += f"FACTURA NO. : {noFactura}\n"
+    
+    contenido += "-" * 32 + "\n"
+    contenido += f"SR(a). ESTIMADO CLIENTE\n"
+    contenido += "-" * 32 + "\n"
+    contenido += f"CODIGO\n"
+    contenido += f"DESCRIPCION\n"
+    ANCHO = 32
+    left = 16
+    right = ANCHO - left
+    contenido += f"{'UNIDADES':<{left}}{'FRACCIONES':>{right}}\n"
+    contenido += f"{'PRECIO UNITARIO':<{left}}{'PRECIO FRACCION':>{right}}\n"
+    contenido += f"DESCUENTO\n"
+    contenido += f"IMPUESTO\n"
     contenido += "-" * 32 + "\n"
 
     subtotal = 0
     impuestos_totales = 0
 
     for prod in productos:
+        codigo = prod.get("Codigo", "")[:20]
         nombre = prod.get("Nombre", "")[:20]
-        cantidad = prod.get("Cantidad", 1)
+        unidades = prod.get("Cantidad", 0)
+        fracciones = prod.get("CantidadFracciones", 0)
         precio_unitario = prod.get("PrecioUnitario", 0)
-        descuento = prod.get("Descuento", 0)
+        precio_fraccion = prod.get("TotalFraccionario", 0)
+        descuento = prod.get("PerDescuento", 0)
         precio_total = prod.get("PrecioTotal", 0)
+        precioImpuestos = prod.get("PrecioImpuesto", 0)
         impuestos = prod.get("Impuestos", 0)
         es_boni = prod.get("EsBonificacion", False)
 
@@ -68,19 +99,29 @@ def imprimir_ticket_win32(data):
         impuestos_totales += (precio_total - (precio_total / (1 + impuestos / 100))) if not es_boni else 0
 
         boni_txt = " (Bonif.)" if es_boni else ""
-        contenido += f"{nombre:20} x{cantidad}\n"
-        contenido += f"  {precio_unitario:.2f}  Desc: c{descuento:.2f}{boni_txt}\n"
-        contenido += f"  Total: {precio_total:.2f}\n"
+        contenido += f"{codigo:20}\n"
+        contenido += f"{nombre:20}\n"
+        contenido += f"UNID. x{unidades} FRACC. x{fracciones}\n"
+        contenido += f"PRECIO UNIT. {precio_unitario:.2f} TOTAL FRACC. {precio_fraccion:.2f}\n"
+        contenido += f"DESC. {descuento:.2f}\n"
+        contenido += f"I.V.A. {impuestos:.2f}% MONTO I.V.A: {precioImpuestos:.2f}\n"
+        contenido += f"  TOTAL: {precio_total:.2f}\n"
+        contenido += feed_lineas(2) 
 
     contenido += "-" * 32 + "\n"
-    contenido += f"Subtotal: c{subtotal:.2f}\n"
-    contenido += f"IVA: {impuestos_totales:.2f}\n"
+    contenido += f"SUBTOTAL: {subtotal:.2f}\n"
+    contenido += f"I.V.A: {impuestos_totales:.2f}\n"
     contenido += "-" * 32 + "\n"
-    contenido += f"Total: \x9E{total:.2f}\n"
-    contenido += f"Pago: {metodo_pago}\n"
+    contenido += f"TOTAL: {total:.2f}\n"
+    contenido += f"METODO PAGO: {metodo_pago}\n"
     contenido += "-" * 32 + "\n"
-    contenido += "¡Gracias por su compra!\n"
-    contenido += "\n" * 4
+    contenido += "¡GRACIAS POR SU COMPA!\n"
+    contenido += "NO SE ACEPTAN DEVOLUCIONES\n"
+    contenido += feed_lineas(2) 
+    contenido += ALIGN_CENTER
+    contenido += "Autrizado mediante resolucion No. DGT-R-\n"  
+    contenido += "033-2019 del 20 de Junio del 2019.\n" 
+    contenido += "Version 4.3\n"   
     contenido += "\x1D\x56\x42\x00"  # comando ESC/POS para corte
 
 
