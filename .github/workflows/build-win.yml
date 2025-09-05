@@ -74,34 +74,39 @@ jobs:
           $outBase   = "PluginServer-Setup-$exeSuffix"
           $issPath   = "installer-$exeSuffix.iss"
 
-          Set-Content -Path $issPath -Value "[Setup]"
-          Add-Content -Path $issPath -Value "AppName=$appName"
-          Add-Content -Path $issPath -Value "AppVersion=$version"
-          Add-Content -Path $issPath -Value "DefaultDirName={pf}\$appName"
-          Add-Content -Path $issPath -Value "DefaultGroupName=$appName"
-          Add-Content -Path $issPath -Value "OutputBaseFilename=$outBase"
-          Add-Content -Path $issPath -Value "OutputDir=dist\installer"
-          Add-Content -Path $issPath -Value "ArchitecturesAllowed=$archAllowed"
-          Add-Content -Path $issPath -Value "ArchitecturesInstallIn64BitMode=$install64"
-          Add-Content -Path $issPath -Value "Compression=lzma"
-          Add-Content -Path $issPath -Value "SolidCompression=yes"
-          Add-Content -Path $issPath -Value "WizardStyle=modern"
-          Add-Content -Path $issPath -Value ""
-          Add-Content -Path $issPath -Value "[Languages]"
-          Add-Content -Path $issPath -Value 'Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"'
-          Add-Content -Path $issPath -Value ""
-          Add-Content -Path $issPath -Value "[Files]"
-          Add-Content -Path $issPath -Value "Source: `"$sourceDir\*`"; DestDir: `"{app}`"; Flags: ignoreversion recursesubdirs createallsubdirs"
-          Add-Content -Path $issPath -Value ""
-          Add-Content -Path $issPath -Value "[Icons]"
-          Add-Content -Path $issPath -Value 'Name: "{group}\'+$appName+'"; Filename: "{app}\'+$exeName+'"'
-          Add-Content -Path $issPath -Value 'Name: "{userdesktop}\'+$appName+'"; Filename: "{app}\'+$exeName+'"; Tasks: desktopicon'
-          Add-Content -Path $issPath -Value ""
-          Add-Content -Path $issPath -Value "[Tasks]"
-          Add-Content -Path $issPath -Value 'Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescription: "Accesos directos:"'
-          Add-Content -Path $issPath -Value ""
-          Add-Content -Path $issPath -Value "[Run]"
-          Add-Content -Path $issPath -Value 'Filename: "{app}\'+$exeName+'"; Description: "Iniciar '+$appName+' al finalizar"; Flags: postinstall nowait'
+                    $content = @"
+[Setup]
+AppName=$appName
+AppVersion=$version
+DefaultDirName={pf}\$appName
+DefaultGroupName=$appName
+OutputBaseFilename=$outBase
+OutputDir=dist\installer
+ArchitecturesAllowed=$archAllowed
+ArchitecturesInstallIn64BitMode=$install64
+Compression=lzma
+SolidCompression=yes
+WizardStyle=modern
+
+[Languages]
+Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+
+[Files]
+Source: "$sourceDir\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{group}\$appName"; Filename: "{app}\$exeName"
+Name: "{userdesktop}\$appName"; Filename: "{app}\$exeName"; Tasks: desktopicon
+
+[Tasks]
+Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescription: "Accesos directos:"
+
+[Run]
+Filename: "{app}\$exeName"; Description: "Iniciar $appName al finalizar"; Flags: postinstall nowait
+"@
+
+      Set-Content -Path $issPath -Value $content -Encoding UTF8
+
 
       - name: Compile installer with Inno Setup
         shell: pwsh
