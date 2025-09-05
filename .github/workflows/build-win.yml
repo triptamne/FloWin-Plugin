@@ -110,7 +110,8 @@ jobs:
           # Escribe el archivo en UTF-8
           $lines | Out-File -FilePath $issPath -Encoding utf8
 
-          Write-Host "Generated $issPath:"
+          # Mostrar contenido sin que PowerShell confunda ":" tras una variable
+          Write-Host ("Generated {0}:" -f $issPath)
           Get-Content $issPath | ForEach-Object { "> $_" }
 
       - name: "Compile installer with Inno Setup"
