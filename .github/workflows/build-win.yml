@@ -107,13 +107,12 @@ jobs:
             'Filename: "{app}\'+$exeName+'"; Description: "Iniciar '+$appName+' al finalizar"; Flags: postinstall nowait'
           )
 
-          # Solo para builds x64, decide si instalar en modo 64-bit
+          # Solo para builds x64: agrega ArchitecturesInstallIn64BitMode (no la insertes en arrays fijos)
           if ($archAllowed -eq 'x64') {
             if ($install64 -eq 'yes') {
-              $lines[ $lines.IndexOf('Compression=lzma') ] # no-op para asegurar array
-              $lines.Insert(8, 'ArchitecturesInstallIn64BitMode=yes')
+              $lines += 'ArchitecturesInstallIn64BitMode=yes'
             } else {
-              $lines.Insert(8, 'ArchitecturesInstallIn64BitMode=no')
+              $lines += 'ArchitecturesInstallIn64BitMode=no'
             }
           }
 
