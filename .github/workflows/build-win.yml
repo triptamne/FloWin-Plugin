@@ -13,11 +13,15 @@ jobs:
       matrix:
         include:
           - arch: x86
-            py: "3.8"
-            exe_suffix: "win32"
+            py: '3.8'
+            exe_suffix: win32
+            arch_allowed: x86
+            install64: 'no'
           - arch: x64
-            py: "3.8"
-            exe_suffix: "win64"
+            py: '3.8'
+            exe_suffix: win64
+            arch_allowed: x64
+            install64: 'yes'
 
     steps:
       - name: Checkout
@@ -33,10 +37,7 @@ jobs:
         shell: pwsh
         run: |
           python --version
-          python - << 'PY'
-          import struct, sys
-          print("Bits:", 8*struct.calcsize('P'), "Platform:", sys.platform)
-          PY
+          python -c "import struct; print(8*struct.calcsize('P'))"
 
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
@@ -50,76 +51,64 @@ jobs:
             pip install flask flask-cors pywin32 pyinstaller pyinstaller-hooks-contrib
           }
 
-      # Build en --onedir para menor tasa de falsos positivos y buena compatibilidad Win7
       - name: Build with PyInstaller (--onedir)
         shell: pwsh
-        run: >
-          pyinstaller --onedir --noconsole
-          --name "PluginServer-${{ matrix.exe_suffix }}"
-          Plugin.py
-
-      - name: Verify dist contents
-        run: dir dist
+        run: |
+          pyinstaller --onedir --noconsole --name PluginServer-${{ matrix.exe_suffix }} Plugin.py
+          dir dist
 
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      # Generamos un .iss simple SIN preprocesador complicado para evitar errores YAML
       - name: Create Inno Setup script
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist\installer | Out-Null
-          $exeSuffix="${{ matrix.exe_suffix }}"
-          $appName="Plugin Server"
-          $version="1.0.${{ github.run_number }}"
-          $archAllowed = if ($exeSuffix -eq 'win32') {'x86'} else {'x64'}
-          $install64   = if ($exeSuffix -eq 'win32') {'no'}  else {'yes'}
-          $sourceDir   = "dist\PluginServer-$exeSuffix"
-          $exeName     = "PluginServer-$exeSuffix.exe"
-          $outBase     = "PluginServer-Setup-$exeSuffix"
-          $issPath     = "installer-$exeSuffix.iss"
+          $exeSuffix = "${{ matrix.exe_suffix }}"
+          $appName   = "Plugin Server"
+          $version   = "1.0.${{ github.run_number }}"
+          $archAllowed = "${{ matrix.arch_allowed }}"
+          $install64   = "${{ matrix.install64 }}"
+          $sourceDir = "dist\PluginServer-$exeSuffix"
+          $exeName   = "PluginServer-$exeSuffix.exe"
+          $outBase   = "PluginServer-Setup-$exeSuffix"
+          $issPath   = "installer-$exeSuffix.iss"
 
-          $content = @"
-[Setup]
-AppName=$appName
-AppVersion=$version
-DefaultDirName={pf}\$appName
-DefaultGroupName=$appName
-OutputBaseFilename=$outBase
-OutputDir=dist\installer
-ArchitecturesAllowed=$archAllowed
-ArchitecturesInstallIn64BitMode=$install64
-Compression=lzma
-SolidCompression=yes
-WizardStyle=modern
-
-[Languages]
-Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
-
-[Files]
-Source: "$sourceDir\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-[Icons]
-Name: "{group}\$appName"; Filename: "{app}\$exeName"
-Name: "{userdesktop}\$appName"; Filename: "{app}\$exeName"; Tasks: desktopicon
-
-[Tasks]
-Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescription: "Accesos directos:"
-
-[Run]
-Filename: "{app}\$exeName"; Description: "Iniciar $appName al finalizar"; Flags: postinstall nowait
-"@
-
-          Set-Content -Path $issPath -Value $content -Encoding UTF8
+          Set-Content -Path $issPath -Value "[Setup]"
+          Add-Content -Path $issPath -Value "AppName=$appName"
+          Add-Content -Path $issPath -Value "AppVersion=$version"
+          Add-Content -Path $issPath -Value "DefaultDirName={pf}\$appName"
+          Add-Content -Path $issPath -Value "DefaultGroupName=$appName"
+          Add-Content -Path $issPath -Value "OutputBaseFilename=$outBase"
+          Add-Content -Path $issPath -Value "OutputDir=dist\installer"
+          Add-Content -Path $issPath -Value "ArchitecturesAllowed=$archAllowed"
+          Add-Content -Path $issPath -Value "ArchitecturesInstallIn64BitMode=$install64"
+          Add-Content -Path $issPath -Value "Compression=lzma"
+          Add-Content -Path $issPath -Value "SolidCompression=yes"
+          Add-Content -Path $issPath -Value "WizardStyle=modern"
+          Add-Content -Path $issPath -Value ""
+          Add-Content -Path $issPath -Value "[Languages]"
+          Add-Content -Path $issPath -Value 'Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"'
+          Add-Content -Path $issPath -Value ""
+          Add-Content -Path $issPath -Value "[Files]"
+          Add-Content -Path $issPath -Value "Source: `"$sourceDir\*`"; DestDir: `"{app}`"; Flags: ignoreversion recursesubdirs createallsubdirs"
+          Add-Content -Path $issPath -Value ""
+          Add-Content -Path $issPath -Value "[Icons]"
+          Add-Content -Path $issPath -Value 'Name: "{group}\'+$appName+'"; Filename: "{app}\'+$exeName+'"'
+          Add-Content -Path $issPath -Value 'Name: "{userdesktop}\'+$appName+'"; Filename: "{app}\'+$exeName+'"; Tasks: desktopicon'
+          Add-Content -Path $issPath -Value ""
+          Add-Content -Path $issPath -Value "[Tasks]"
+          Add-Content -Path $issPath -Value 'Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescription: "Accesos directos:"'
+          Add-Content -Path $issPath -Value ""
+          Add-Content -Path $issPath -Value "[Run]"
+          Add-Content -Path $issPath -Value 'Filename: "{app}\'+$exeName+'"; Description: "Iniciar '+$appName+' al finalizar"; Flags: postinstall nowait'
 
       - name: Compile installer with Inno Setup
         shell: pwsh
         run: |
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           & "$iscc" "installer-${{ matrix.exe_suffix }}.iss"
-
-      - name: List installer output
-        run: dir dist\installer
+          dir dist\installer
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
