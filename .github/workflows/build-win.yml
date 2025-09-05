@@ -1,4 +1,4 @@
-name: Build Win7-Compatible Installers (x86 & x64)
+name: "Build Win7-Compatible Installers (x86 & x64)"
 
 on:
   push:
@@ -6,43 +6,44 @@ on:
 
 jobs:
   build:
-    name: Build ${{ matrix.arch }} (Python ${{ matrix.py }})
+    name: "Build ${{ matrix.arch }} (Python ${{ matrix.py }})"
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: x86
-            py: '3.8'
-            exe_suffix: win32
-            arch_allowed: x86
-            install64: 'no'
+            py: "3.8"
+            exe_suffix: "win32"
+            arch_allowed: "x86"
+            install64: "no"
           - arch: x64
-            py: '3.8'
-            exe_suffix: win64
-            arch_allowed: x64
-            install64: 'yes'
+            py: "3.8"
+            exe_suffix: "win64"
+            arch_allowed: "x64"
+            install64: "yes"
 
     steps:
-      - name: Checkout
+      - name: "Checkout"
         uses: actions/checkout@v4
 
-      - name: Setup Python ${{ matrix.py }} ${{ matrix.arch }}
+      - name: "Setup Python ${{ matrix.py }} ${{ matrix.arch }}"
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.py }}
           architecture: ${{ matrix.arch }}
 
-      - name: Show Python version & arch
+      - name: "Show Python version & arch"
         shell: pwsh
         run: |
           python --version
           python -c "import struct; print(8*struct.calcsize('P'))"
 
-      - name: Upgrade pip
+      - name: "Upgrade pip"
+        shell: pwsh
         run: python -m pip install --upgrade pip
 
-      - name: Install dependencies
+      - name: "Install dependencies"
         shell: pwsh
         run: |
           if (Test-Path requirements.txt) {
@@ -51,28 +52,29 @@ jobs:
             pip install flask flask-cors pywin32 pyinstaller pyinstaller-hooks-contrib
           }
 
-      - name: Build with PyInstaller (--onedir)
+      - name: "Build with PyInstaller (--onedir)"
         shell: pwsh
         run: |
-          pyinstaller --onedir --noconsole --name PluginServer-${{ matrix.exe_suffix }} Plugin.py
+          pyinstaller --onedir --noconsole --name "PluginServer-${{ matrix.exe_suffix }}" Plugin.py
           dir dist
 
-      - name: Install Inno Setup
+      - name: "Install Inno Setup"
+        shell: pwsh
         run: choco install innosetup -y
 
-      - name: Create Inno Setup script
+      - name: "Create Inno Setup script"
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist\installer | Out-Null
-          $exeSuffix = "${{ matrix.exe_suffix }}"
-          $appName   = "Plugin Server"
-          $version   = "1.0.${{ github.run_number }}"
+          $exeSuffix   = "${{ matrix.exe_suffix }}"
+          $appName     = "Plugin Server"
+          $version     = "1.0.${{ github.run_number }}"
           $archAllowed = "${{ matrix.arch_allowed }}"
           $install64   = "${{ matrix.install64 }}"
-          $sourceDir = "dist\PluginServer-$exeSuffix"
-          $exeName   = "PluginServer-$exeSuffix.exe"
-          $outBase   = "PluginServer-Setup-$exeSuffix"
-          $issPath   = "installer-$exeSuffix.iss"
+          $sourceDir   = "dist\PluginServer-$exeSuffix"
+          $exeName     = "PluginServer-$exeSuffix.exe"
+          $outBase     = "PluginServer-Setup-$exeSuffix"
+          $issPath     = "installer-$exeSuffix.iss"
 
           $content = @"
 [Setup]
@@ -107,15 +109,15 @@ Filename: "{app}\$exeName"; Description: "Iniciar $appName al finalizar"; Flags:
 
           Set-Content -Path $issPath -Value $content -Encoding UTF8
 
-      - name: Compile installer with Inno Setup
+      - name: "Compile installer with Inno Setup"
         shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           & "$iscc" "installer-${{ matrix.exe_suffix }}.iss"
           dir dist\installer
 
-      - name: Upload installer artifact
+      - name: "Upload installer artifact"
         uses: actions/upload-artifact@v4
         with:
-          name: PluginServer-Setup-${{ matrix.exe_suffix }}
+          name: "PluginServer-Setup-${{ matrix.exe_suffix }}"
           path: dist/installer/PluginServer-Setup-${{ matrix.exe_suffix }}.exe
