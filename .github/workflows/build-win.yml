@@ -107,11 +107,11 @@ jobs:
             'Filename: "{app}\'+$exeName+'"; Description: "Iniciar '+$appName+' al finalizar"; Flags: postinstall nowait'
           )
 
-          # Escribe el archivo en UTF-8 sin BOM (Inno lo lee bien)
-          [System.IO.File]::WriteAllLines($issPath, $lines, New-Object System.Text.UTF8Encoding($false))
+          # Escribe el archivo en UTF-8
+          $lines | Out-File -FilePath $issPath -Encoding utf8
+
           Write-Host "Generated $issPath:"
           Get-Content $issPath | ForEach-Object { "> $_" }
-
 
       - name: "Compile installer with Inno Setup"
         shell: pwsh
