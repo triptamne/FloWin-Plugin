@@ -76,38 +76,42 @@ jobs:
           $outBase     = "PluginServer-Setup-$exeSuffix"
           $issPath     = "installer-$exeSuffix.iss"
 
-          $content = @"
-[Setup]
-AppName=$appName
-AppVersion=$version
-DefaultDirName={pf}\$appName
-DefaultGroupName=$appName
-OutputBaseFilename=$outBase
-OutputDir=dist\installer
-ArchitecturesAllowed=$archAllowed
-ArchitecturesInstallIn64BitMode=$install64
-Compression=lzma
-SolidCompression=yes
-WizardStyle=modern
+          $lines = @(
+            '[Setup]'
+            "AppName=$appName"
+            "AppVersion=$version"
+            'DefaultDirName={pf}\'+$appName
+            "DefaultGroupName=$appName"
+            "OutputBaseFilename=$outBase"
+            'OutputDir=dist\installer'
+            "ArchitecturesAllowed=$archAllowed"
+            "ArchitecturesInstallIn64BitMode=$install64"
+            'Compression=lzma'
+            'SolidCompression=yes'
+            'WizardStyle=modern'
+            ''
+            '[Languages]'
+            'Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"'
+            ''
+            '[Files]'
+            'Source: "'+$sourceDir+'\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs'
+            ''
+            '[Icons]'
+            'Name: "{group}\'+$appName+'"; Filename: "{app}\'+$exeName+'"'
+            'Name: "{userdesktop}\'+$appName+'"; Filename: "{app}\'+$exeName+'"; Tasks: desktopicon'
+            ''
+            '[Tasks]'
+            'Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescription: "Accesos directos:"'
+            ''
+            '[Run]'
+            'Filename: "{app}\'+$exeName+'"; Description: "Iniciar '+$appName+' al finalizar"; Flags: postinstall nowait'
+          )
 
-[Languages]
-Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+          # Escribe el archivo en UTF-8 sin BOM (Inno lo lee bien)
+          [System.IO.File]::WriteAllLines($issPath, $lines, New-Object System.Text.UTF8Encoding($false))
+          Write-Host "Generated $issPath:"
+          Get-Content $issPath | ForEach-Object { "> $_" }
 
-[Files]
-Source: "$sourceDir\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-[Icons]
-Name: "{group}\$appName"; Filename: "{app}\$exeName"
-Name: "{userdesktop}\$appName"; Filename: "{app}\$exeName"; Tasks: desktopicon
-
-[Tasks]
-Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescription: "Accesos directos:"
-
-[Run]
-Filename: "{app}\$exeName"; Description: "Iniciar $appName al finalizar"; Flags: postinstall nowait
-"@
-
-          Set-Content -Path $issPath -Value $content -Encoding UTF8
 
       - name: "Compile installer with Inno Setup"
         shell: pwsh
