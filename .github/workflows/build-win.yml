@@ -17,11 +17,15 @@ jobs:
             exe_suffix: "win32"
             arch_allowed: "x86"
             install64: "no"
+            vc_url: "https://aka.ms/vs/17/release/vc_redist.x86.exe"
+            ucrt_subdir: "x86"
           - arch: x64
             py: "3.8"
             exe_suffix: "win64"
             arch_allowed: "x64"
             install64: "yes"
+            vc_url: "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+            ucrt_subdir: "x64"
 
     steps:
       - name: "Checkout"
@@ -55,8 +59,28 @@ jobs:
       - name: "Build with PyInstaller (--onedir)"
         shell: pwsh
         run: |
+          # Ajusta si tu entrypoint real no es Plugin.py
           pyinstaller --onedir --noconsole --name "PluginServer-${{ matrix.exe_suffix }}" Plugin.py
           dir dist
+
+      - name: "Download VC++ Redistributable"
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "${{ matrix.vc_url }}" -OutFile "dist\\vc_redist.${{ matrix.arch }}.exe"
+          dir dist
+
+      - name: "Copy UCRT DLLs into app folder"
+        shell: pwsh
+        run: |
+          $ucrtBase = "${env:ProgramFiles(x86)}\Windows Kits\10\Redist\ucrt\DLLs\${{ matrix.ucrt_subdir }}"
+          if (!(Test-Path $ucrtBase)) {
+            Write-Host "UCRT redist folder not found at $ucrtBase. Skipping copy."
+          } else {
+            $dest = "dist\PluginServer-${{ matrix.exe_suffix }}"
+            Copy-Item "$ucrtBase\api-ms-win-*.dll" -Destination $dest -Force
+            Copy-Item "$ucrtBase\ucrtbase.dll"        -Destination $dest -Force
+          }
+          dir "dist\PluginServer-${{ matrix.exe_suffix }}"
 
       - name: "Install Inno Setup"
         shell: pwsh
@@ -66,6 +90,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist\installer | Out-Null
+
           $exeSuffix   = "${{ matrix.exe_suffix }}"
           $appName     = "Plugin Server"
           $version     = "1.0.${{ github.run_number }}"
@@ -75,8 +100,8 @@ jobs:
           $exeName     = "PluginServer-$exeSuffix.exe"
           $outBase     = "PluginServer-Setup-$exeSuffix"
           $issPath     = "installer-$exeSuffix.iss"
+          $vcFile      = "dist\\vc_redist.${{ matrix.arch }}.exe"
 
-          # Bloque base del [Setup]
           $lines = @(
             '[Setup]'
             "AppName=$appName"
@@ -89,12 +114,14 @@ jobs:
             'Compression=lzma'
             'SolidCompression=yes'
             'WizardStyle=modern'
+            'MinVersion=6.1sp1'
             ''
             '[Languages]'
             'Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"'
             ''
             '[Files]'
             'Source: "'+$sourceDir+'\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs'
+            'Source: "'+$vcFile+'"; DestDir: "{tmp}"; Flags: ignoreversion deleteafterinstall'
             ''
             '[Icons]'
             'Name: "{group}\'+$appName+'"; Filename: "{app}\'+$exeName+'"'
@@ -104,10 +131,10 @@ jobs:
             'Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescription: "Accesos directos:"'
             ''
             '[Run]'
+            'Filename: "{tmp}\vc_redist.'+"${{ matrix.arch }}"+'.exe"; Parameters: "/install /quiet /norestart"; Flags: waituntilterminated'
             'Filename: "{app}\'+$exeName+'"; Description: "Iniciar '+$appName+' al finalizar"; Flags: postinstall nowait'
           )
 
-          # Solo para builds x64: agrega ArchitecturesInstallIn64BitMode (no la insertes en arrays fijos)
           if ($archAllowed -eq 'x64') {
             if ($install64 -eq 'yes') {
               $lines += 'ArchitecturesInstallIn64BitMode=yes'
@@ -116,10 +143,7 @@ jobs:
             }
           }
 
-          # Escribe el archivo en UTF-8
           $lines | Out-File -FilePath $issPath -Encoding utf8
-
-          # Mostrar contenido sin que PowerShell confunda ":" tras una variable
           Write-Host ("Generated {0}:" -f $issPath)
           Get-Content $issPath | ForEach-Object { "> $_" }
 
