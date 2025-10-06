@@ -26,7 +26,6 @@ jobs:
           Get-ChildItem -Recurse | Select-Object FullName
 
       # === Normalizar estructura de fuentes ===
-      # Si tienes .ttf en .\fonts\, los copia a .\fonts\DejaVuSans\ para que coincida con Plugin.py, Plugin.spec e installer.iss
       - name: Normalizar carpeta de fuentes a .\fonts\DejaVuSans
         run: |
           $ErrorActionPreference = "Stop"
@@ -50,10 +49,10 @@ jobs:
           # Validar que ahora sí haya .ttf en .\fonts\DejaVuSans\
           $ttf = Get-ChildItem -Path $dst -Filter *.ttf -File -ErrorAction SilentlyContinue
           if (!$ttf) {
-            Write-Error "No se encontraron .ttf en $dst. Coloca tus fuentes en 'fonts' o en 'fonts\\DejaVuSans'."
+            Write-Error "No se encontraron .ttf en ${dst}. Coloca tus fuentes en 'fonts' o en 'fonts\\DejaVuSans'."
           }
 
-          Write-Host "Fuentes detectadas en $dst:"
+          Write-Host "Fuentes detectadas en ${dst}:"
           $ttf | Select-Object Name, Length
 
       - name: Verificar entry script/spec/iss
@@ -81,7 +80,6 @@ jobs:
           if (Test-Path ".\build") { Remove-Item .\build -Recurse -Force }
           if (Test-Path ".\dist")  { Remove-Item .\dist  -Recurse -Force }
 
-          # Usa SPEC para incluir fonts (datas) y hiddenimports
           pyinstaller --clean --noconfirm Plugin.spec
 
           if (!(Test-Path ".\dist\Plugin\Plugin.exe")) {
