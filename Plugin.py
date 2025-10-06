@@ -12,6 +12,8 @@ import win32print
 import win32ui
 import win32con
 
+import logging
+from logging.handlers import RotatingFileHandler
 # ------------------------------------------------------------
 # Config
 # ------------------------------------------------------------
@@ -43,6 +45,41 @@ PAGE_WIDTH_CHARS = 32  # si usas monoespaciada, te sirve de referencia
 # Util: cargar fuente TTF en memoria (privada, sin instalar)
 # ------------------------------------------------------------
 FR_PRIVATE = 0x10
+
+def notify_start():
+    try:
+        from win10toast import ToastNotifier
+        ToastNotifier().show_toast(
+            "FloWin Plugin",
+            "Servidor corriendo en http://127.0.0.1:5100",
+            duration=4,
+            threaded=True
+        )
+    except Exception:
+        # sin dependencia o fallo de notificación: ignora
+        pass
+
+def setup_logging():
+    try:
+        base_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+        # si está congelado, usa la carpeta del ejecutable
+        if getattr(sys, "frozen", False):
+            base_dir = os.path.dirname(sys.executable)
+        log_path = os.path.join(base_dir, "plugin.log")
+
+        handler = RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+        fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        handler.setFormatter(fmt)
+
+        root = logging.getLogger()
+        root.setLevel(logging.INFO)
+        root.addHandler(handler)
+
+        # silenciar werkzeug a WARNING para que no llene el log
+        logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    except Exception:
+        pass
+
 
 def _load_ttf_private(ttf_path: str) -> bool:
     """Carga una fuente TTF en la sesión actual (privada) sin instalarla en el sistema."""
@@ -305,4 +342,7 @@ def test():
     return "running!"
 
 if __name__ == '__main__':
-    app.run(port=5100)
+    setup_logging()
+    notify_start()
+    # No reloader, no debug, puerto fijo
+    app.run(host='127.0.0.1', port=5100, debug=False, use_reloader=False)
