@@ -5,7 +5,8 @@ from flask_cors import CORS
 
 import os, sys
 import ctypes
-from ctypes import wintypes
+import ctypes
+from ctypes import wintypes, c_void_p 
 
 import win32print
 import win32ui
@@ -48,8 +49,8 @@ def _load_ttf_private(ttf_path: str) -> bool:
     if not os.path.isfile(ttf_path):
         return False
     AddFontResourceExW = ctypes.windll.gdi32.AddFontResourceExW
-    AddFontResourceExW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.PVOID]
-    AddFontResourceExW.restype = wintypes.INT
+    AddFontResourceExW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, c_void_p]  # <-- FIX
+    AddFontResourceExW.restype = ctypes.c_int  # o wintypes.INT
 
     added = AddFontResourceExW(ttf_path, FR_PRIVATE, None)
     return added > 0
