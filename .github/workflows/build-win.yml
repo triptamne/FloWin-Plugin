@@ -1,169 +1,73 @@
-name: "Build Windows 10+ Installers (x86 & x64)"
+name: Build Plugin (x86 & x64)
 
 on:
   push:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
-    name: "Build ${{ matrix.arch }} (Python ${{ matrix.py }})"
     runs-on: windows-latest
     strategy:
-      fail-fast: false
       matrix:
-        include:
-          - arch: x86
-            py: "3.11"
-            exe_suffix: "win32"
-            arch_allowed: "x86"
-            install64: "no"
-            vc_url: "https://aka.ms/vs/17/release/vc_redist.x86.exe"
-            ucrt_subdir: "x86"
-          - arch: x64
-            py: "3.11"
-            exe_suffix: "win64"
-            arch_allowed: "x64"
-            install64: "yes"
-            vc_url: "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-            ucrt_subdir: "x64"
+        arch: [ x64, x86 ]
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: .   # <-- AJUSTA si tu código está en subcarpeta
 
     steps:
-      - name: "Checkout"
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: "Setup Python ${{ matrix.py }} ${{ matrix.arch }}"
+      - name: Listar repo (debug)
+        run: |
+          Write-Host "PWD: $(Get-Location)"
+          Get-ChildItem -Recurse | Select-Object FullName
+
+      - name: Verificar entry script
+        run: |
+          if (!(Test-Path ".\Plugin.py")) {
+            Write-Error ".\Plugin.py no está en $(Get-Location). Ajusta working-directory o rutas."
+          }
+
+      - name: Setup Python (${{ matrix.arch }})
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.py }}
+          python-version: '3.11.9'
           architecture: ${{ matrix.arch }}
 
-      - name: "Show Python version & arch"
-        shell: pwsh
+      - name: Instalar dependencias
         run: |
-          python --version
-          python -c "import struct; print(8*struct.calcsize('P'))"
+          python -m pip install --upgrade pip
+          pip install pyinstaller==6.10.0 pywin32 flask flask-cors
 
-      - name: "Upgrade pip"
-        shell: pwsh
-        run: python -m pip install --upgrade pip wheel
-
-      - name: "Install dependencies"
-        shell: pwsh
+      - name: Build con PyInstaller (incluye fonts)
         run: |
-          if (Test-Path requirements.txt) {
-            pip install -r requirements.txt
-          } else {
-            pip install flask flask-cors pywin32 pyinstaller pyinstaller-hooks-contrib
-          }
+          # Limpiar salidas antiguas
+          if (Test-Path ".\build") { Remove-Item .\build -Recurse -Force }
+          if (Test-Path ".\dist")  { Remove-Item .\dist  -Recurse -Force }
 
-      - name: "Build with PyInstaller (--onedir)"
-        shell: pwsh
+          # Usar SPEC para evitar problemas de rutas y datas
+          pyinstaller --clean --noconfirm --name Plugin Plugin.py
+
+          # Mover a carpeta por arquitectura (dist\Plugin\* -> dist\${arch}\Plugin\*)
+          New-Item -ItemType Directory -Force -Path ".\dist\${{ matrix.arch }}"
+          Move-Item ".\dist\Plugin" ".\dist\${{ matrix.arch }}\" -Force
+
+      - name: Instalar Inno Setup
         run: |
-          # Empaqueta server.py y añade la carpeta fonts al output
-          pyinstaller `
-            --onedir `
-            --noconsole `
-            --name "TicketPrinterServer-${{ matrix.exe_suffix }}" `
-            --hidden-import win32timezone `
-            --add-data "fonts;fonts" `
-            server.py
+          choco install innosetup --no-progress -y
 
-          dir dist
-
-      - name: "Download VC++ Redistributable"
-        shell: pwsh
+      - name: Build installer (${{ matrix.arch }})
         run: |
-          Invoke-WebRequest -Uri "${{ matrix.vc_url }}" -OutFile "dist\\vc_redist.${{ matrix.arch }}.exe"
-          dir dist
+          $env:Path += ";C:\Program Files (x86)\Inno Setup 6"
+          iscc /DMyArch=${{ matrix.arch }} installer.iss
 
-      - name: "Copy UCRT DLLs into app folder (optional)"
-        shell: pwsh
-        run: |
-          $ucrtBase = "${env:ProgramFiles(x86)}\Windows Kits\10\Redist\ucrt\DLLs\${{ matrix.ucrt_subdir }}"
-          if (!(Test-Path $ucrtBase)) {
-            Write-Host "UCRT redist folder not found at $ucrtBase. Skipping copy."
-          } else {
-            $dest = "dist\TicketPrinterServer-${{ matrix.exe_suffix }}"
-            Copy-Item "$ucrtBase\api-ms-win-*.dll" -Destination $dest -Force -ErrorAction SilentlyContinue
-            Copy-Item "$ucrtBase\ucrtbase.dll"        -Destination $dest -Force -ErrorAction SilentlyContinue
-          }
-          dir "dist\TicketPrinterServer-${{ matrix.exe_suffix }}"
-
-      - name: "Install Inno Setup"
-        shell: pwsh
-        run: choco install innosetup -y
-
-      - name: "Create Inno Setup script"
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist\installer | Out-Null
-
-          $exeSuffix   = "${{ matrix.exe_suffix }}"
-          $appName     = "Ticket Printer Server"
-          $version     = "1.0.${{ github.run_number }}"
-          $archAllowed = "${{ matrix.arch_allowed }}"
-          $install64   = "${{ matrix.install64 }}"
-          $sourceDir   = "dist\TicketPrinterServer-$exeSuffix"
-          $exeName     = "TicketPrinterServer-$exeSuffix.exe"
-          $outBase     = "TicketPrinterServer-Setup-$exeSuffix"
-          $issPath     = "installer-$exeSuffix.iss"
-          $vcFile      = "dist\\vc_redist.${{ matrix.arch }}.exe"
-
-          $lines = @(
-            '[Setup]'
-            "AppName=$appName"
-            "AppVersion=$version"
-            'DefaultDirName={pf}\'+$appName
-            "DefaultGroupName=$appName"
-            "OutputBaseFilename=$outBase"
-            'OutputDir=dist\installer'
-            "ArchitecturesAllowed=$archAllowed"
-            'Compression=lzma'
-            'SolidCompression=yes'
-            'WizardStyle=modern'
-            'MinVersion=10.0'
-            'DisableDirPage=no'
-            ''
-            '[Languages]'
-            'Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"'
-            ''
-            '[Files]'
-            'Source: "'+$sourceDir+'\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs'
-            'Source: "'+$vcFile+'"; DestDir: "{tmp}"; Flags: ignoreversion deleteafterinstall'
-            ''
-            '[Icons]'
-            'Name: "{group}\'+$appName+'"; Filename: "{app}\'+$exeName+'"'
-            'Name: "{userdesktop}\'+$appName+'"; Filename: "{app}\'+$exeName+'"; Tasks: desktopicon'
-            ''
-            '[Tasks]'
-            'Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescription: "Accesos directos:"'
-            ''
-            '[Run]'
-            'Filename: "{tmp}\vc_redist.'+"${{ matrix.arch }}"+'.exe"; Parameters: "/install /quiet /norestart"; Flags: waituntilterminated'
-            'Filename: "{app}\'+$exeName+'"; Description: "Iniciar '+$appName+' al finalizar"; Flags: postinstall nowait'
-          )
-
-          if ($archAllowed -eq 'x64') {
-            if ($install64 -eq 'yes') {
-              $lines += 'ArchitecturesInstallIn64BitMode=yes'
-            } else {
-              $lines += 'ArchitecturesInstallIn64BitMode=no'
-            }
-          }
-
-          $lines | Out-File -FilePath $issPath -Encoding utf8
-          Write-Host ("Generated {0}:" -f $issPath)
-          Get-Content $issPath | ForEach-Object { "> $_" }
-
-      - name: "Compile installer with Inno Setup"
-        shell: pwsh
-        run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          & "$iscc" "installer-${{ matrix.exe_suffix }}.iss"
-          dir dist\installer
-
-      - name: "Upload installer artifact"
+      - name: Publicar artefactos (${{ matrix.arch }})
         uses: actions/upload-artifact@v4
         with:
-          name: "TicketPrinterServer-Setup-${{ matrix.exe_suffix }}"
-          path: dist/installer/TicketPrinterServer-Setup-${{ matrix.exe_suffix }}.exe
+          name: Plugin-${{ matrix.arch }}
+          path: |
+            dist\${{ matrix.arch }}\Plugin\Plugin.exe
+            Output\Setup-FloWin-Plugin-${{ matrix.arch }}.exe

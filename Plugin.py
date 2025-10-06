@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify
 from datetime import datetime
 from flask_cors import CORS
 
-import os
+import os, sys
 import ctypes
 from ctypes import wintypes
 
@@ -15,7 +15,13 @@ import win32con
 # Config
 # ------------------------------------------------------------
 # Ruta(s) posibles de la fuente. Puedes dejar solo la que tengas.
-FONTS_DIR = os.path.join(os.path.dirname(__file__), "fonts", "DejaVuSans")
+
+def resource_path(*relative):
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, *relative)
+
+# Sustituye tu FONTS_DIR y FONT_FILES_TRY por esto:
+FONTS_DIR = resource_path("fonts", "DejaVuSans")
 FONT_FILES_TRY = [
     os.path.join(FONTS_DIR, "DejaVuSans.ttf"),
     os.path.join(FONTS_DIR, "DejaVuSansMono.ttf"),
