@@ -1,4 +1,4 @@
-name: "Build Win7-Compatible Installers (x86 & x64)"
+name: "Build Windows 10+ Installers (x86 & x64)"
 
 on:
   push:
@@ -13,14 +13,14 @@ jobs:
       matrix:
         include:
           - arch: x86
-            py: "3.8"
+            py: "3.11"
             exe_suffix: "win32"
             arch_allowed: "x86"
             install64: "no"
             vc_url: "https://aka.ms/vs/17/release/vc_redist.x86.exe"
             ucrt_subdir: "x86"
           - arch: x64
-            py: "3.8"
+            py: "3.11"
             exe_suffix: "win64"
             arch_allowed: "x64"
             install64: "yes"
@@ -45,7 +45,7 @@ jobs:
 
       - name: "Upgrade pip"
         shell: pwsh
-        run: python -m pip install --upgrade pip
+        run: python -m pip install --upgrade pip wheel
 
       - name: "Install dependencies"
         shell: pwsh
@@ -59,8 +59,15 @@ jobs:
       - name: "Build with PyInstaller (--onedir)"
         shell: pwsh
         run: |
-          # Ajusta si tu entrypoint real no es Plugin.py
-          pyinstaller --onedir --noconsole --name "PluginServer-${{ matrix.exe_suffix }}" Plugin.py
+          # Empaqueta server.py y añade la carpeta fonts al output
+          pyinstaller `
+            --onedir `
+            --noconsole `
+            --name "TicketPrinterServer-${{ matrix.exe_suffix }}" `
+            --hidden-import win32timezone `
+            --add-data "fonts;fonts" `
+            server.py
+
           dir dist
 
       - name: "Download VC++ Redistributable"
@@ -69,18 +76,18 @@ jobs:
           Invoke-WebRequest -Uri "${{ matrix.vc_url }}" -OutFile "dist\\vc_redist.${{ matrix.arch }}.exe"
           dir dist
 
-      - name: "Copy UCRT DLLs into app folder"
+      - name: "Copy UCRT DLLs into app folder (optional)"
         shell: pwsh
         run: |
           $ucrtBase = "${env:ProgramFiles(x86)}\Windows Kits\10\Redist\ucrt\DLLs\${{ matrix.ucrt_subdir }}"
           if (!(Test-Path $ucrtBase)) {
             Write-Host "UCRT redist folder not found at $ucrtBase. Skipping copy."
           } else {
-            $dest = "dist\PluginServer-${{ matrix.exe_suffix }}"
-            Copy-Item "$ucrtBase\api-ms-win-*.dll" -Destination $dest -Force
-            Copy-Item "$ucrtBase\ucrtbase.dll"        -Destination $dest -Force
+            $dest = "dist\TicketPrinterServer-${{ matrix.exe_suffix }}"
+            Copy-Item "$ucrtBase\api-ms-win-*.dll" -Destination $dest -Force -ErrorAction SilentlyContinue
+            Copy-Item "$ucrtBase\ucrtbase.dll"        -Destination $dest -Force -ErrorAction SilentlyContinue
           }
-          dir "dist\PluginServer-${{ matrix.exe_suffix }}"
+          dir "dist\TicketPrinterServer-${{ matrix.exe_suffix }}"
 
       - name: "Install Inno Setup"
         shell: pwsh
@@ -92,13 +99,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist\installer | Out-Null
 
           $exeSuffix   = "${{ matrix.exe_suffix }}"
-          $appName     = "Plugin Server"
+          $appName     = "Ticket Printer Server"
           $version     = "1.0.${{ github.run_number }}"
           $archAllowed = "${{ matrix.arch_allowed }}"
           $install64   = "${{ matrix.install64 }}"
-          $sourceDir   = "dist\PluginServer-$exeSuffix"
-          $exeName     = "PluginServer-$exeSuffix.exe"
-          $outBase     = "PluginServer-Setup-$exeSuffix"
+          $sourceDir   = "dist\TicketPrinterServer-$exeSuffix"
+          $exeName     = "TicketPrinterServer-$exeSuffix.exe"
+          $outBase     = "TicketPrinterServer-Setup-$exeSuffix"
           $issPath     = "installer-$exeSuffix.iss"
           $vcFile      = "dist\\vc_redist.${{ matrix.arch }}.exe"
 
@@ -114,7 +121,8 @@ jobs:
             'Compression=lzma'
             'SolidCompression=yes'
             'WizardStyle=modern'
-            'MinVersion=6.1sp1'
+            'MinVersion=10.0'
+            'DisableDirPage=no'
             ''
             '[Languages]'
             'Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"'
@@ -157,5 +165,5 @@ jobs:
       - name: "Upload installer artifact"
         uses: actions/upload-artifact@v4
         with:
-          name: "PluginServer-Setup-${{ matrix.exe_suffix }}"
-          path: dist/installer/PluginServer-Setup-${{ matrix.exe_suffix }}.exe
+          name: "TicketPrinterServer-Setup-${{ matrix.exe_suffix }}"
+          path: dist/installer/TicketPrinterServer-Setup-${{ matrix.exe_suffix }}.exe
