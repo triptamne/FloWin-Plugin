@@ -11,8 +11,15 @@ AppVersion={#MyAppVersion}
 DefaultDirName={autopf}\FloWin\Plugin
 DefaultGroupName=FloWin
 OutputBaseFilename=Setup-FloWin-Plugin-{#MyArch}
-ArchitecturesInstallIn64BitMode={#MyArch} = "x64"
 ArchitecturesAllowed=x86 x64
+
+; 👇 Solo instalamos en modo 64-bit cuando MyArch es x64
+#if MyArch == "x64"
+ArchitecturesInstallIn64BitMode=x64
+#else
+ArchitecturesInstallIn64BitMode=
+#endif
+
 MinVersion=10.0
 DisableDirPage=no
 Compression=lzma
@@ -21,12 +28,10 @@ WizardStyle=modern
 PrivilegesRequired=admin
 
 [Files]
-; Copia el binario correcto según arch
-; Asegúrate de que tu workflow deje los .exe en estas rutas:
-; dist\x64\Plugin\Plugin.exe  y  dist\x86\Plugin\Plugin.exe
+; dist\x64\Plugin\Plugin.exe  ó  dist\x86\Plugin\Plugin.exe
 Source: "dist\{#MyArch}\Plugin\Plugin.exe"; DestDir: "{app}"; Flags: ignoreversion
 
-; Copia las fuentes (se usan en runtime por server.py)
+; Fuentes (opcional, útil para tu carga en runtime)
 Source: "fonts\DejaVuSans\*.ttf"; DestDir: "{app}\fonts\DejaVuSans"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
