@@ -14,7 +14,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-        working-directory: .   # Cambia aquí si tu código está en subcarpeta
+        working-directory: .
 
     steps:
       - name: Checkout
@@ -25,17 +25,23 @@ jobs:
           Write-Host "PWD: $(Get-Location)"
           Get-ChildItem -Recurse | Select-Object FullName
 
-      - name: Verificar entry script
+      # === Opción C: traer fuentes DejaVu al workspace ===
+      - name: Descargar fuentes DejaVu (para bundling e instalador)
         run: |
-          if (!(Test-Path ".\Plugin.py")) {
-            Write-Error ".\Plugin.py no está en $(Get-Location). Ajusta working-directory o rutas."
-          } 
-          if (!(Test-Path ".\Plugin.spec")) {
-            Write-Error ".\Plugin.spec no está en $(Get-Location)."
-          }
-          if (!(Test-Path ".\fonts\DejaVuSans")) {
-            Write-Warning "No se encontró .\fonts\DejaVuSans. El runtime buscará fuentes dentro del bundle."
-          }
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path ".\fonts\DejaVuSans" | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/dejavu-fonts/dejavu-fonts/raw/version_2_37/ttf/DejaVuSans.ttf" -OutFile ".\fonts\DejaVuSans\DejaVuSans.ttf"
+          Invoke-WebRequest -Uri "https://github.com/dejavu-fonts/dejavu-fonts/raw/version_2_37/ttf/DejaVuSansMono.ttf" -OutFile ".\fonts\DejaVuSans\DejaVuSansMono.ttf"
+          # Verificar que existen (requerido por installer.iss)
+          if (!(Test-Path ".\fonts\DejaVuSans\DejaVuSans.ttf")) { Write-Error "Falta DejaVuSans.ttf" }
+          if (!(Test-Path ".\fonts\DejaVuSans\DejaVuSansMono.ttf")) { Write-Error "Falta DejaVuSansMono.ttf" }
+          Get-ChildItem ".\fonts\DejaVuSans" | Select-Object Name,Length
+
+      - name: Verificar entry script/spec
+        run: |
+          if (!(Test-Path ".\Plugin.py"))   { Write-Error ".\Plugin.py no está en $(Get-Location)." }
+          if (!(Test-Path ".\Plugin.spec")) { Write-Error ".\Plugin.spec no está en $(Get-Location)." }
+          if (!(Test-Path ".\installer.iss")) { Write-Error ".\installer.iss no está en $(Get-Location)." }
 
       - name: Setup Python (${{ matrix.arch }})
         uses: actions/setup-python@v5
@@ -50,31 +56,25 @@ jobs:
 
       - name: Build con PyInstaller (usa SPEC)
         run: |
-          # Limpiar salidas antiguas
           if (Test-Path ".\build") { Remove-Item .\build -Recurse -Force }
           if (Test-Path ".\dist")  { Remove-Item .\dist  -Recurse -Force }
 
-          # Usar SPEC para respetar datas/hiddenimports
+          # Usa SPEC para incluir fonts (datas) y hiddenimports
           pyinstaller --clean --noconfirm Plugin.spec
 
-          # Validar binario
           if (!(Test-Path ".\dist\Plugin\Plugin.exe")) {
             Write-Error "No se generó .\dist\Plugin\Plugin.exe"
           }
 
-          # Mover a carpeta por arquitectura (dist\Plugin\* -> dist\${arch}\Plugin\*)
-          New-Item -ItemType Directory -Force -Path ".\dist\${{ matrix.arch }}"
+          New-Item -ItemType Directory -Force -Path ".\dist\${{ matrix.arch }}" | Out-Null
           Move-Item ".\dist\Plugin" ".\dist\${{ matrix.arch }}\" -Force
 
       - name: Instalar Inno Setup
-        run: |
-          choco install innosetup --no-progress -y
+        run: choco install innosetup --no-progress -y
 
       - name: Build installer (${{ matrix.arch }})
         run: |
           $env:Path += ";C:\Program Files (x86)\Inno Setup 6"
-          # Si NO renombraste tu archivo .iss, cambia la siguiente línea por:
-          # iscc /DMyArch=${{ matrix.arch }} instaler.iss
           iscc /DMyArch=${{ matrix.arch }} installer.iss
 
       - name: Mostrar outputs (debug)
