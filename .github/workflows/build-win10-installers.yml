@@ -25,32 +25,48 @@ jobs:
           Write-Host "PWD: $(Get-Location)"
           Get-ChildItem -Recurse | Select-Object FullName
 
-      # === Opción C: traer fuentes DejaVu al workspace ===
+      # === Opción C: traer fuentes DejaVu con fallback robusto ===
       - name: Descargar fuentes DejaVu (para bundling e instalador)
         run: |
           $ErrorActionPreference = "Stop"
-          # Asegurar TLS 1.2 (suele estar, pero por si acaso)
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
           New-Item -ItemType Directory -Force -Path ".\fonts\DejaVuSans" | Out-Null
 
-          $urls = @(
-            @{ url = "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/ttf/DejaVuSans.ttf";      out = ".\fonts\DejaVuSans\DejaVuSans.ttf" },
-            @{ url = "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/ttf/DejaVuSansMono.ttf";  out = ".\fonts\DejaVuSans\DejaVuSansMono.ttf" }
+          function Download-WithFallback {
+            param(
+              [Parameter(Mandatory=$true)] [string[]] $Urls,
+              [Parameter(Mandatory=$true)] [string]   $OutFile
+            )
+            $headers = @{ "User-Agent" = "curl/7.79 (GitHub Actions)" }
+            foreach ($u in $Urls) {
+              try {
+                Write-Host "Descargando: $u"
+                Invoke-WebRequest -Uri $u -OutFile $OutFile -UseBasicParsing -Headers $headers
+                if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -ge 10000)) {
+                  return
+                } else {
+                  Write-Warning "Archivo pequeño o vacío desde $u, probando siguiente fallback..."
+                }
+              } catch {
+                Write-Warning "Fallo descarga $u: $($_.Exception.Message). Intentando siguiente..."
+              }
+            }
+            throw "No se pudo descargar $OutFile desde ninguno de los mirrors."
+          }
+
+          # Rutas candidatas (master primero, luego tag version_2_37)
+          $candsSans = @(
+            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans.ttf",
+            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/ttf/DejaVuSans.ttf"
+          )
+          $candsMono = @(
+            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSansMono.ttf",
+            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/ttf/DejaVuSansMono.ttf"
           )
 
-          foreach ($f in $urls) {
-            try {
-              Invoke-WebRequest -Uri $f.url -OutFile $f.out -UseBasicParsing
-            } catch {
-              Write-Warning "Fallo descarga $($f.url). Reintentando..."
-              Start-Sleep -Seconds 2
-              Invoke-WebRequest -Uri $f.url -OutFile $f.out -UseBasicParsing
-            }
-            if (!(Test-Path $f.out) -or ((Get-Item $f.out).Length -lt 10000)) {
-              throw "Descarga corrupta o vacía: $($f.out)"
-            }
-          }
+          Download-WithFallback -Urls $candsSans -OutFile ".\fonts\DejaVuSans\DejaVuSans.ttf"
+          Download-WithFallback -Urls $candsMono -OutFile ".\fonts\DejaVuSans\DejaVuSansMono.ttf"
 
           Get-ChildItem ".\fonts\DejaVuSans" | Select-Object Name,Length
 
@@ -91,7 +107,7 @@ jobs:
 
       - name: Build installer (${{ matrix.arch }})
         run: |
-          $env:Path += ";C:\ Program Files (x86)\Inno Setup 6"
+          $env:Path += ";C:\Program Files (x86)\Inno Setup 6"
           iscc /DMyArch=${{ matrix.arch }} installer.iss
 
       - name: Mostrar outputs (debug)
