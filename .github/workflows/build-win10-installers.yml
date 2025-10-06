@@ -14,7 +14,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-        working-directory: .   # <-- AJUSTA si tu código está en subcarpeta
+        working-directory: .   # Cambia aquí si tu código está en subcarpeta
 
     steps:
       - name: Checkout
@@ -30,6 +30,12 @@ jobs:
           if (!(Test-Path ".\Plugin.py")) {
             Write-Error ".\Plugin.py no está en $(Get-Location). Ajusta working-directory o rutas."
           } 
+          if (!(Test-Path ".\Plugin.spec")) {
+            Write-Error ".\Plugin.spec no está en $(Get-Location)."
+          }
+          if (!(Test-Path ".\fonts\DejaVuSans")) {
+            Write-Warning "No se encontró .\fonts\DejaVuSans. El runtime buscará fuentes dentro del bundle."
+          }
 
       - name: Setup Python (${{ matrix.arch }})
         uses: actions/setup-python@v5
@@ -42,14 +48,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller==6.10.0 pywin32 flask flask-cors
 
-      - name: Build con PyInstaller (incluye fonts)
+      - name: Build con PyInstaller (usa SPEC)
         run: |
           # Limpiar salidas antiguas
           if (Test-Path ".\build") { Remove-Item .\build -Recurse -Force }
           if (Test-Path ".\dist")  { Remove-Item .\dist  -Recurse -Force }
 
-          # Usar SPEC para evitar problemas de rutas y datas
-          pyinstaller --clean --noconfirm --name Plugin Plugin.py
+          # Usar SPEC para respetar datas/hiddenimports
+          pyinstaller --clean --noconfirm Plugin.spec
+
+          # Validar binario
+          if (!(Test-Path ".\dist\Plugin\Plugin.exe")) {
+            Write-Error "No se generó .\dist\Plugin\Plugin.exe"
+          }
 
           # Mover a carpeta por arquitectura (dist\Plugin\* -> dist\${arch}\Plugin\*)
           New-Item -ItemType Directory -Force -Path ".\dist\${{ matrix.arch }}"
@@ -62,7 +73,15 @@ jobs:
       - name: Build installer (${{ matrix.arch }})
         run: |
           $env:Path += ";C:\Program Files (x86)\Inno Setup 6"
+          # Si NO renombraste tu archivo .iss, cambia la siguiente línea por:
+          # iscc /DMyArch=${{ matrix.arch }} instaler.iss
           iscc /DMyArch=${{ matrix.arch }} installer.iss
+
+      - name: Mostrar outputs (debug)
+        run: |
+          Write-Host "Contenido de dist y Output"
+          Get-ChildItem -Recurse .\dist | Select-Object FullName, Length
+          if (Test-Path .\Output) { Get-ChildItem -Recurse .\Output | Select FullName, Length }
 
       - name: Publicar artefactos (${{ matrix.arch }})
         uses: actions/upload-artifact@v4
