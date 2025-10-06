@@ -25,15 +25,45 @@ jobs:
           Write-Host "PWD: $(Get-Location)"
           Get-ChildItem -Recurse | Select-Object FullName
 
-      - name: Verificar entry script/spec y fuentes locales
+      # === Normalizar estructura de fuentes ===
+      # Si tienes .ttf en .\fonts\, los copia a .\fonts\DejaVuSans\ para que coincida con Plugin.py, Plugin.spec e installer.iss
+      - name: Normalizar carpeta de fuentes a .\fonts\DejaVuSans
+        run: |
+          $ErrorActionPreference = "Stop"
+          $srcRoot = Join-Path $PWD "fonts"
+          $dst     = Join-Path $PWD "fonts\DejaVuSans"
+
+          if (!(Test-Path $srcRoot)) {
+            Write-Error "No existe la carpeta 'fonts' en la raíz del repo."
+          }
+
+          if (!(Test-Path $dst)) {
+            New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          }
+
+          # Copiar .ttf que estén directamente en .\fonts\ hacia .\fonts\DejaVuSans\
+          $rootTtf = Get-ChildItem -Path $srcRoot -Filter *.ttf -File -ErrorAction SilentlyContinue
+          if ($rootTtf) {
+            Copy-Item -Path (Join-Path $srcRoot "*.ttf") -Destination $dst -Force
+          }
+
+          # Validar que ahora sí haya .ttf en .\fonts\DejaVuSans\
+          $ttf = Get-ChildItem -Path $dst -Filter *.ttf -File -ErrorAction SilentlyContinue
+          if (!$ttf) {
+            Write-Error "No se encontraron .ttf en $dst. Coloca tus fuentes en 'fonts' o en 'fonts\\DejaVuSans'."
+          }
+
+          Write-Host "Fuentes detectadas en $dst:"
+          $ttf | Select-Object Name, Length
+
+      - name: Verificar entry script/spec/iss
         run: |
           if (!(Test-Path ".\Plugin.py"))        { Write-Error ".\Plugin.py no está en $(Get-Location)." }
           if (!(Test-Path ".\Plugin.spec"))      { Write-Error ".\Plugin.spec no está en $(Get-Location)." }
           if (!(Test-Path ".\installer.iss"))    { Write-Error ".\installer.iss no está en $(Get-Location)." }
-          if (!(Test-Path ".\fonts\DejaVuSans")) { Write-Error "Faltan fuentes: .\fonts\DejaVuSans no existe (requerido por installer.iss y Plugin.spec)." }
-          $ttf = Get-ChildItem ".\fonts\DejaVuSans" -Filter *.ttf -ErrorAction SilentlyContinue
-          if (!$ttf) { Write-Error "No se encontraron .ttf en .\fonts\DejaVuSans. Agrega DejaVuSans.ttf (y opcionalmente DejaVuSansMono.ttf)." }
-          Write-Host "Fuentes detectadas:"; $ttf | Select-Object Name, Length
+          if (!(Test-Path ".\fonts\DejaVuSans")) { Write-Error "Faltan fuentes: .\fonts\DejaVuSans no existe." }
+          $ttf = Get-ChildItem ".\fonts\DejaVuSans" -Filter *.ttf -File -ErrorAction SilentlyContinue
+          if (!$ttf) { Write-Error "No se encontraron .ttf en .\fonts\DejaVuSans." }
 
       - name: Setup Python (${{ matrix.arch }})
         uses: actions/setup-python@v5
