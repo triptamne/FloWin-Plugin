@@ -25,56 +25,15 @@ jobs:
           Write-Host "PWD: $(Get-Location)"
           Get-ChildItem -Recurse | Select-Object FullName
 
-      # === Opción C: traer fuentes DejaVu con fallback robusto ===
-      - name: Descargar fuentes DejaVu (para bundling e instalador)
+      - name: Verificar entry script/spec y fuentes locales
         run: |
-          $ErrorActionPreference = "Stop"
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-          New-Item -ItemType Directory -Force -Path ".\fonts\DejaVuSans" | Out-Null
-
-          function Download-WithFallback {
-            param(
-              [Parameter(Mandatory=$true)] [string[]] $Urls,
-              [Parameter(Mandatory=$true)] [string]   $OutFile
-            )
-            $headers = @{ "User-Agent" = "curl/7.79 (GitHub Actions)" }
-            foreach ($u in $Urls) {
-              try {
-                Write-Host "Descargando: $u"
-                Invoke-WebRequest -Uri $u -OutFile $OutFile -UseBasicParsing -Headers $headers
-                if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -ge 10000)) {
-                  return
-                } else {
-                  Write-Warning "Archivo pequeño o vacío desde $u, probando siguiente fallback..."
-                }
-              } catch {
-                Write-Warning "Fallo descarga $u: $($_.Exception.Message). Intentando siguiente..."
-              }
-            }
-            throw "No se pudo descargar $OutFile desde ninguno de los mirrors."
-          }
-
-          # Rutas candidatas (master primero, luego tag version_2_37)
-          $candsSans = @(
-            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans.ttf",
-            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/ttf/DejaVuSans.ttf"
-          )
-          $candsMono = @(
-            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSansMono.ttf",
-            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/ttf/DejaVuSansMono.ttf"
-          )
-
-          Download-WithFallback -Urls $candsSans -OutFile ".\fonts\DejaVuSans\DejaVuSans.ttf"
-          Download-WithFallback -Urls $candsMono -OutFile ".\fonts\DejaVuSans\DejaVuSansMono.ttf"
-
-          Get-ChildItem ".\fonts\DejaVuSans" | Select-Object Name,Length
-
-      - name: Verificar entry script/spec
-        run: |
-          if (!(Test-Path ".\Plugin.py"))   { Write-Error ".\Plugin.py no está en $(Get-Location)." }
-          if (!(Test-Path ".\Plugin.spec")) { Write-Error ".\Plugin.spec no está en $(Get-Location)." }
-          if (!(Test-Path ".\installer.iss")) { Write-Error ".\installer.iss no está en $(Get-Location)." }
+          if (!(Test-Path ".\Plugin.py"))        { Write-Error ".\Plugin.py no está en $(Get-Location)." }
+          if (!(Test-Path ".\Plugin.spec"))      { Write-Error ".\Plugin.spec no está en $(Get-Location)." }
+          if (!(Test-Path ".\installer.iss"))    { Write-Error ".\installer.iss no está en $(Get-Location)." }
+          if (!(Test-Path ".\fonts\DejaVuSans")) { Write-Error "Faltan fuentes: .\fonts\DejaVuSans no existe (requerido por installer.iss y Plugin.spec)." }
+          $ttf = Get-ChildItem ".\fonts\DejaVuSans" -Filter *.ttf -ErrorAction SilentlyContinue
+          if (!$ttf) { Write-Error "No se encontraron .ttf en .\fonts\DejaVuSans. Agrega DejaVuSans.ttf (y opcionalmente DejaVuSansMono.ttf)." }
+          Write-Host "Fuentes detectadas:"; $ttf | Select-Object Name, Length
 
       - name: Setup Python (${{ matrix.arch }})
         uses: actions/setup-python@v5
