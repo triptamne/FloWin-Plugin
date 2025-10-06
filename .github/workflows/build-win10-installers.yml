@@ -29,12 +29,29 @@ jobs:
       - name: Descargar fuentes DejaVu (para bundling e instalador)
         run: |
           $ErrorActionPreference = "Stop"
+          # Asegurar TLS 1.2 (suele estar, pero por si acaso)
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
           New-Item -ItemType Directory -Force -Path ".\fonts\DejaVuSans" | Out-Null
-          Invoke-WebRequest -Uri "https://github.com/dejavu-fonts/dejavu-fonts/raw/version_2_37/ttf/DejaVuSans.ttf" -OutFile ".\fonts\DejaVuSans\DejaVuSans.ttf"
-          Invoke-WebRequest -Uri "https://github.com/dejavu-fonts/dejavu-fonts/raw/version_2_37/ttf/DejaVuSansMono.ttf" -OutFile ".\fonts\DejaVuSans\DejaVuSansMono.ttf"
-          # Verificar que existen (requerido por installer.iss)
-          if (!(Test-Path ".\fonts\DejaVuSans\DejaVuSans.ttf")) { Write-Error "Falta DejaVuSans.ttf" }
-          if (!(Test-Path ".\fonts\DejaVuSans\DejaVuSansMono.ttf")) { Write-Error "Falta DejaVuSansMono.ttf" }
+
+          $urls = @(
+            @{ url = "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/ttf/DejaVuSans.ttf";      out = ".\fonts\DejaVuSans\DejaVuSans.ttf" },
+            @{ url = "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/ttf/DejaVuSansMono.ttf";  out = ".\fonts\DejaVuSans\DejaVuSansMono.ttf" }
+          )
+
+          foreach ($f in $urls) {
+            try {
+              Invoke-WebRequest -Uri $f.url -OutFile $f.out -UseBasicParsing
+            } catch {
+              Write-Warning "Fallo descarga $($f.url). Reintentando..."
+              Start-Sleep -Seconds 2
+              Invoke-WebRequest -Uri $f.url -OutFile $f.out -UseBasicParsing
+            }
+            if (!(Test-Path $f.out) -or ((Get-Item $f.out).Length -lt 10000)) {
+              throw "Descarga corrupta o vacía: $($f.out)"
+            }
+          }
+
           Get-ChildItem ".\fonts\DejaVuSans" | Select-Object Name,Length
 
       - name: Verificar entry script/spec
@@ -74,7 +91,7 @@ jobs:
 
       - name: Build installer (${{ matrix.arch }})
         run: |
-          $env:Path += ";C:\Program Files (x86)\Inno Setup 6"
+          $env:Path += ";C:\ Program Files (x86)\Inno Setup 6"
           iscc /DMyArch=${{ matrix.arch }} installer.iss
 
       - name: Mostrar outputs (debug)
