@@ -29,7 +29,7 @@ jobs:
         run: |
           if (!(Test-Path ".\Plugin.py")) {
             Write-Error ".\Plugin.py no está en $(Get-Location). Ajusta working-directory o rutas."
-          }
+          } 
 
       - name: Setup Python (${{ matrix.arch }})
         uses: actions/setup-python@v5
