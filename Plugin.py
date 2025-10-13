@@ -1,4 +1,4 @@
-# server.py
+# Plugin.py
 from flask import Flask, request, jsonify
 from datetime import datetime
 from flask_cors import CORS
@@ -35,8 +35,8 @@ FONT_FILES_TRY = [
 PREFERRED_FONT_NAME = "DejaVu Sans"        # o "DejaVu Sans Mono"
 
 # Tamaño de letra (en "logical units" negativos = altura en píxeles aprox.)
-FONT_HEIGHT = -20  # ~10 pt en muchos drivers térmicos; ajusta a gusto
-LINE_SPACING = 24  # separación vertical por línea
+FONT_HEIGHT   = -18  # antes -20 (reduce un poco)
+LINE_SPACING  = 22   # separación vertical por línea
 LEFT_MARGIN = 20   # margen izquierdo en unidades del DC
 TOP_MARGIN = 20    # margen superior
 PAGE_WIDTH_CHARS = 32  # si usas monoespaciada, te sirve de referencia
@@ -48,13 +48,14 @@ FR_PRIVATE = 0x10
 
 def notify_start():
     try:
-        from win10toast import ToastNotifier
-        ToastNotifier().show_toast(
-            "FloWin Plugin",
-            "Servidor corriendo en http://127.0.0.1:5100",
-            duration=4,
-            threaded=True
-        )
+        logging.info("FloWin Plugin: servidor corriendo en http://127.0.0.1:5100")
+        #from win10toast import ToastNotifier
+        #ToastNotifier().show_toast(
+        #    "FloWin Plugin",
+        #    "Servidor corriendo en http://127.0.0.1:5100",
+        #    duration=4,
+        #    threaded=True
+        #)
     except Exception:
         # sin dependencia o fallo de notificación: ignora
         pass
@@ -181,16 +182,6 @@ def _build_ticket_lines(data):
     lines.append(f"FACTURA NO. : {noFactura}")
     lines.append(sep)
     lines.append("SR(a). ESTIMADO CLIENTE")
-    lines.append(sep)
-    lines.append("CODIGO")
-    lines.append("DESCRIPCION")
-
-    # Sub-encabezados de columnas (si usas monoespaciada, puedes fijar columnas)
-    lines.append(f"{'UNIDADES':<16}{'FRACCIONES':>16}")
-    lines.append(f"{'PRECIO UNITARIO':<16}{'PRECIO FRACCION':>16}")
-    lines.append("BONIFICACION")
-    lines.append("DESCUENTO")
-    lines.append("IMPUESTO")
     lines.append(sep)
 
     subtotal = 0.0
