@@ -1,2 +1,69 @@
 2025-10-13 10:23:22,420 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
 2025-10-13 10:33:16,261 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 09:34:46,839 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 09:40:49,843 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 09:48:50,408 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 09:52:44,380 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 09:56:32,085 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 09:58:36,984 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 09:58:47,079 ERROR root: Fallo al imprimir
+Traceback (most recent call last):
+  File "C:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 448, in print_ticket
+    _print_lines_gdi(lines, target_cols=target_cols, font_px_override=font_px_override)
+  File "C:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 353, in _print_lines_gdi
+    font_px = _pick_font_height_fit_cols(hDC, face, pw, LEFT_MARGIN, RIGHT_MARGIN, target_cols, mono=is_mono)
+  File "C:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 172, in _pick_font_height_fit_cols
+    font = _make_font(mid, face_name, mono=mono)
+  File "C:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 115, in _make_font
+    return win32ui.CreateFont({
+TypeError: 'outPrecision' is an invalid keyword argument for LOGFONT()
+2025-11-12 10:00:53,885 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 10:01:04,425 ERROR root: Fallo al imprimir
+Traceback (most recent call last):
+  File "C:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 453, in print_ticket
+    _print_lines_gdi(lines, target_cols=target_cols, font_px_override=font_px_override)
+  File "C:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 359, in _print_lines_gdi
+    font_px = _pick_font_height_fit_cols(hDC, face, pw, LEFT_MARGIN, RIGHT_MARGIN, target_cols, mono=is_mono)
+  File "C:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 178, in _pick_font_height_fit_cols
+    font = _make_font(mid, face_name, mono=mono)
+  File "C:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 130, in _make_font
+    return win32ui.CreateFontFromHandle(hfont)
+AttributeError: module 'win32ui' has no attribute 'CreateFontFromHandle'
+2025-11-12 10:03:21,910 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 10:03:30,785 ERROR root: Fallo al imprimir
+Traceback (most recent call last):
+  File "C:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 453, in print_ticket
+    _print_lines_gdi(lines, target_cols=target_cols, font_px_override=font_px_override)
+  File "C:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 359, in _print_lines_gdi
+    font_px = _pick_font_height_fit_cols(hDC, face, pw, LEFT_MARGIN, RIGHT_MARGIN, target_cols, mono=is_mono)
+  File "C:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 178, in _pick_font_height_fit_cols
+    font = _make_font(mid, face_name, mono=mono)
+  File "C:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 130, in _make_font
+    return win32ui.CreateFontFromHandle(hfont)
+AttributeError: module 'win32ui' has no attribute 'CreateFontFromHandle'
+2025-11-12 10:03:51,003 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 10:05:57,760 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 10:10:13,148 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 10:23:30,829 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 10:23:48,799 WARNING root: No se pudieron cargar TTF privadas DejaVu. Se intentará con fuentes del sistema.
+2025-11-12 10:27:58,502 WARNING root: No se pudieron cargar TTF privadas DejaVu. Se intentará con fuentes del sistema.
+2025-11-12 10:34:11,048 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 10:42:15,140 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
+2025-11-12 10:42:30,685 ERROR root: Fallo al imprimir
+Traceback (most recent call last):
+  File "c:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 530, in print_ticket
+    _print_lines_gdi(
+  File "c:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 463, in _print_lines_gdi
+    ok = _draw_line_bitmap_to_printer(hDC, line, left, y, right - left, font_px, None)
+  File "c:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 370, in _draw_line_bitmap_to_printer
+    old = dc_mem.SelectObject(bmp)
+win32ui.error: Select bitmap object failed
+2025-11-12 10:44:56,755 ERROR root: Fallo al imprimir
+Traceback (most recent call last):
+  File "c:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 530, in print_ticket
+  File "c:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 463, in _print_lines_gdi
+    try:
+  File "c:\Users\XCPC\Documents\PyProjects\IntegrationPlugin\Plugin.py", line 370, in _draw_line_bitmap_to_printer
+    return False
+win32ui.error: Select bitmap object failed
+2025-11-12 10:50:11,133 INFO root: FloWin Plugin: servidor corriendo en http://127.0.0.1:5100
