@@ -32,7 +32,7 @@ PrivilegesRequired=admin
 Source: "dist\{#MyArch}\Plugin\Plugin.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Fuentes (opcional, útil para tu carga en runtime)
-Source: "fonts\DejaVuSans\*.ttf"; DestDir: "{app}\fonts\DejaVuSans"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "fonts\*.ttf"; DestDir: "{app}\fonts"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\FloWin Plugin"; Filename: "{app}\Plugin.exe"

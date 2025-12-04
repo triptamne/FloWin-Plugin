@@ -14,18 +14,23 @@ if not os.path.exists(script):
 
 # Incluir la carpeta de fonts completa dentro del bundle en "fonts\DejaVuSans"
 datas = []
-fonts_dir = os.path.join(os.path.dirname(script), "fonts", "DejaVuSans")
+fonts_dir = os.path.join(os.path.dirname(script), "fonts")
 if os.path.isdir(fonts_dir):
     for name in os.listdir(fonts_dir):
         if name.lower().endswith(".ttf"):
-            datas.append((os.path.join(fonts_dir, name), "fonts\\DejaVuSans"))
+            # origen físico -> destino dentro del bundle
+            datas.append((os.path.join(fonts_dir, name), "fonts"))
 
 a = Analysis(
     [script],
     pathex=[],
     binaries=[],
     datas=datas,
-    hiddenimports=collect_submodules("win32print") + collect_submodules("win32ui"),
+    hiddenimports=(
+        collect_submodules("win32print")
+        + collect_submodules("win32ui")
+        + collect_submodules("PIL")
+    ),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

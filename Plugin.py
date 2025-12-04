@@ -14,6 +14,11 @@ import win32con
 import logging
 from logging.handlers import RotatingFileHandler
 
+try:
+    from PIL import Image, ImageDraw, ImageFont, ImageWin
+except Exception:
+    Image = ImageDraw = ImageFont = ImageWin = None
+
 # ============================================================
 # Config
 # ============================================================
@@ -321,11 +326,16 @@ def _build_ticket_lines(data):
 # Raster con Pillow (Unicode‐safe)
 # ============================================================
 def _try_import_pillow():
-    try:
-        from PIL import Image, ImageDraw, ImageFont, ImageWin
-        return Image, ImageDraw, ImageFont, ImageWin
-    except Exception:
-        return None, None, None, None
+    global Image, ImageDraw, ImageFont, ImageWin
+    if Image is None or ImageDraw is None or ImageFont is None or ImageWin is None:
+        try:
+            from PIL import Image as _Image, ImageDraw as _ImageDraw, ImageFont as _ImageFont, ImageWin as _ImageWin
+            Image, ImageDraw, ImageFont, ImageWin = _Image, _ImageDraw, _ImageFont, _ImageWin
+        except Exception as e:
+            logging.exception("Error importando Pillow")
+            return None, None, None, None
+    return Image, ImageDraw, ImageFont, ImageWin
+
 
 def _choose_ttf_for_pillow():
     for p in FONT_FILES_TRY:
