@@ -4,3 +4,4 @@ pyinstaller==6.10.0
 pyinstaller-hooks-contrib==2024.8
 pywin32==306
 pillow==11.2.1
+win10toast==0.9
