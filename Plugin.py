@@ -633,6 +633,36 @@ def _send_cut_command_raw():
     except Exception:
         pass
 
+def _build_anular_factura_lines(payload):
+    # Soporta ambos formatos:
+    # 1) { "IdFactura":..., "ReferenciaFactElectronica":..., "Motivo":..., "config": {...} }
+    # 2) { "data": { ... }, "config": {...} }  (tu caso actual con Axios)
+    if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
+        data = payload.get("data") or {}
+    else:
+        data = payload or {}
+
+    id_factura = data.get("IdFactura", "")
+    ref_nc     = data.get("ReferenciaFactElectronica", "")
+    motivo     = data.get("Motivo", "")
+
+    # Si alguno viene vacío imprime en blanco
+    id_factura = "" if id_factura is None else str(id_factura)
+    ref_nc     = "" if ref_nc is None else str(ref_nc)
+    motivo     = "" if motivo is None else str(motivo)
+
+    sep = "*" * DEFAULT_TARGET_COLS
+
+    lines = [
+        sep,
+        "Anulación Factura",
+        f"Id: {id_factura}",
+        f"Referencia nota crédito: {ref_nc}",
+        f"Motivo: {motivo}",
+        sep,
+    ]
+    return lines
+
 # ============================================================
 # Flask
 # ============================================================
@@ -688,6 +718,54 @@ def print_ticket():
     except Exception as e:
         logging.exception("Fallo al imprimir")
         return jsonify({"status": "error", "message": f"Fallo al imprimir: {str(e)}"})
+
+@app.route('/PrintAnularFactura', methods=['POST'])
+def print_anular_factura():
+    payload = request.get_json() or {}
+    try:
+        _ensure_any_font_loaded()  # solo afecta a GDI
+
+        # ✅ config puede venir en root del payload (como tu PrintTicket) o dentro de payload.data
+        cfg = {}
+        if isinstance(payload.get("config"), dict):
+            cfg = payload.get("config") or {}
+        elif isinstance(payload.get("data"), dict) and isinstance(payload["data"].get("config"), dict):
+            cfg = payload["data"].get("config") or {}
+
+        target_cols = DEFAULT_TARGET_COLS
+        if "cols" in cfg:
+            try:
+                target_cols = max(24, min(60, int(cfg["cols"])))
+            except Exception:
+                pass
+
+        font_px_override = None
+        if "font_px" in cfg:
+            try:
+                font_px_override = int(cfg["font_px"])
+            except Exception:
+                font_px_override = None
+
+        render = str(cfg.get("render", RENDER_MODE_DEFAULT)).lower().strip()
+        force_raster = bool(cfg.get("force_raster", False))
+        use_raster = force_raster or (render == "raster")
+
+        # ✅ ahora pasamos el payload completo, el builder ya sabe sacar payload.data si existe
+        lines = _build_anular_factura_lines(payload)
+
+        if use_raster:
+            _print_lines_raster(lines, target_cols=target_cols, font_px_override=font_px_override)
+        else:
+            _print_lines_gdi(lines, target_cols=target_cols, font_px_override=font_px_override, force_raster=False)
+
+        _send_cut_command_raw()
+
+        resp = jsonify({"status": "ok", "message": "Ticket de anulación enviado a la impresora", "render": "raster" if use_raster else "gdi"})
+        resp.headers.add("Access-Control-Allow-Origin", "*")
+        return resp
+    except Exception as e:
+        logging.exception("Fallo al imprimir anulación")
+        return jsonify({"status": "error", "message": f"Fallo al imprimir anulación: {str(e)}"})
 
 @app.route('/test', methods=['GET'])
 def test():
