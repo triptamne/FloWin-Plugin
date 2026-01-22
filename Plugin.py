@@ -51,6 +51,30 @@ RIGHT_MARGIN  = 16
 BOTTOM_MARGIN = 16
 DEFAULT_TARGET_COLS = 40
 
+# ============================================================
+# Perfil recomendado para Epson TM-U220 (impact/dot matrix)
+# ============================================================
+
+# Para TM-U220, 40 cols suele forzar letra muy pequeña. 33-35 cols suele verse mejor.
+DEFAULT_TARGET_COLS_U220 = 34
+
+# Mínimo de letra para el auto-fit (sube la legibilidad)
+AUTO_FONT_MIN_PX = 14
+AUTO_FONT_MAX_PX = 34
+
+# “Densidad” por raster (binarización):
+# - Más bajo => texto más “delgado/suave” (menos puntos) => suele imprimir más rápido
+# - Más alto => más negro (más puntos) => más lento
+# Rango recomendado: 60 - 140 (aprox)
+DEFAULT_RASTER_THRESHOLD = 95
+
+def _is_tm_u220(printer_name: str) -> bool:
+    try:
+        return "tm-u220" in (printer_name or "").lower()
+    except Exception:
+        return False
+
+
 # Render por defecto: "raster" (recomendado) o "gdi"
 RENDER_MODE_DEFAULT = "raster"
 
@@ -168,8 +192,10 @@ def _select_face_that_renders_unicode(hDC):
 
 def _pick_font_height_fit_cols_gdi(hDC, face_name, printable_width_px, left_margin, right_margin, target_cols=DEFAULT_TARGET_COLS):
     usable = max(40, printable_width_px - (left_margin + right_margin))
-    lo, hi = 9, 28
-    best = 14
+
+    lo, hi = AUTO_FONT_MIN_PX, AUTO_FONT_MAX_PX
+    best = max(AUTO_FONT_MIN_PX, 18)
+
     while lo <= hi:
         mid = (lo + hi) // 2
         font = _make_font(mid, face_name)
@@ -180,12 +206,15 @@ def _pick_font_height_fit_cols_gdi(hDC, face_name, printable_width_px, left_marg
         finally:
             hDC.SelectObject(old)
             del font
+
         if width <= usable:
             best = mid
             lo = mid + 1
         else:
             hi = mid - 1
-    return max(9, min(best, 26))
+
+    return max(AUTO_FONT_MIN_PX, min(best, AUTO_FONT_MAX_PX))
+
 
 def _draw_wrapped_gdi(hDC, text, left, top, right, bottom, extra_spacing=1):
     calc_rect = (left, top, right, bottom)
@@ -285,24 +314,37 @@ def _build_ticket_lines(data):
         fracciones       = prod.get("CantidadFracciones", 0) or 0
         precio_unitario  = prod.get("PrecioUnitario", 0) or 0.0
         precio_fraccion  = prod.get("TotalFraccionario", 0) or 0.0
-        descuento        = prod.get("PerDescuento", 0) or 0.0
-        precio_desc      = prod.get("Descuento", 0) or 0.0
+        descuento_pct    = prod.get("PerDescuento", 0) or 0.0
+        monto_desc       = prod.get("Descuento", 0) or 0.0
         precio_total     = prod.get("PrecioTotal", 0) or 0.0
         impuestos        = float(prod.get("Impuestos", 0) or 0.0)
         es_boni          = bool(prod.get("EsBonificacion", False))
         bonificacion     = prod.get("BonificacionCalculada", 0) or 0.0
         precioImpuestos  = _get_precio_impuestos(prod)
 
+        # --- Totales generales (como lo tenías) ---
         base_sin_iva = (precio_total / (1 + impuestos / 100)) if (not es_boni and impuestos) else (0 if es_boni else precio_total)
         subtotal          += base_sin_iva if not es_boni else 0
         impuestos_totales += (precio_total - base_sin_iva) if not es_boni else 0
+
+        # --- NUEVO: total con descuento aplicado por ítem ---
+        try:
+            total_con_desc = float(precio_total or 0) - float(monto_desc or 0)
+            if total_con_desc < 0:
+                total_con_desc = 0.0
+        except Exception:
+            total_con_desc = 0.0
 
         lines.append(f"{codigo}")
         lines.append(f"{nombre}")
         lines.append(f"UNID.: x{unidades}    FRACC.: x{fracciones}")
         lines.append(f"PRECIO UNIT.: {_format_crc(precio_unitario)}    TOTAL FRACC.: {_format_crc(precio_fraccion)}")
         lines.append(f"BONIF.: x{bonificacion}")
-        lines.append(f"DESC.: {descuento:.2f}%    MONTO DESC.: {_format_crc(precio_desc)}")
+        lines.append(f"DESC.: {float(descuento_pct):.2f}%    MONTO DESC.: {_format_crc(monto_desc)}")
+
+        # ✅ Línea nueva solicitada
+        lines.append(f"TOTAL CON DESC.: {_format_crc(total_con_desc)}")
+
         lines.append(f"I.V.A.: {impuestos:.2f}%   MONTO I.V.A.: {_format_crc(precioImpuestos)}")
         lines.append(f"TOTAL ÍTEM: {_format_crc(precio_total)}")
         lines.append("")
@@ -321,6 +363,7 @@ def _build_ticket_lines(data):
     lines.append("033-2019 del 20 de Junio del 2019.")
     lines.append("Version 4.3")
     return lines
+
 
 # ============================================================
 # Raster con Pillow (Unicode‐safe)
@@ -386,36 +429,51 @@ def _wrap_text_by_width(text, draw, font, max_width):
     return lines
 
 def _pick_font_height_fit_cols_pillow(usable_w, target_cols=DEFAULT_TARGET_COLS, ttf_path=None):
-    # Ajuste binario a columnas usando 'M' * cols como patrón
     Image, ImageDraw, ImageFont, _ = _try_import_pillow()
     if not Image:
-        return 14
+        return max(AUTO_FONT_MIN_PX, 14)
+
     ttf = ttf_path or _choose_ttf_for_pillow()
     if not ttf:
-        return 14
-    lo, hi = 9, 28
-    best = 14
+        return max(AUTO_FONT_MIN_PX, 14)
+
+    lo, hi = AUTO_FONT_MIN_PX, AUTO_FONT_MAX_PX
+    best = max(AUTO_FONT_MIN_PX, 18)
+
     while lo <= hi:
         mid = (lo + hi) // 2
         font = ImageFont.truetype(ttf, mid)
-        img = Image.new("RGB", (usable_w, mid + 20), "white")
+        img = Image.new("L", (usable_w, mid + 30), 255)
         draw = ImageDraw.Draw(img)
+
         test = "M" * int(max(10, target_cols))
         try:
             width = draw.textlength(test, font=font)
         except Exception:
-            bbox = draw.textbbox((0,0), test, font=font)
-            width = (bbox[2]-bbox[0]) if bbox else usable_w+1
+            bbox = draw.textbbox((0, 0), test, font=font)
+            width = (bbox[2] - bbox[0]) if bbox else usable_w + 1
+
         if width <= usable_w:
             best = mid
             lo = mid + 1
         else:
             hi = mid - 1
-    return max(9, min(best, 26))
 
-def _print_lines_raster(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override=None):
-    # Crear DC de impresora y enviar páginas dibujando cada línea como bitmap con wrap
+    return max(AUTO_FONT_MIN_PX, min(best, AUTO_FONT_MAX_PX))
+
+
+def _print_lines_raster(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override=None, raster_threshold=None):
+    """
+    Raster optimizado:
+    - Renderiza texto a imágenes por página (no por línea)
+    - Controla “intensidad” con binarización (threshold)
+    """
     printer_name = win32print.GetDefaultPrinter()
+
+    # Perfil TM-U220: menos columnas por default => letra más grande
+    if _is_tm_u220(printer_name) and target_cols == DEFAULT_TARGET_COLS:
+        target_cols = DEFAULT_TARGET_COLS_U220
+
     hDC = win32ui.CreateDC()
     hDC.CreatePrinterDC(printer_name)
 
@@ -438,6 +496,7 @@ def _print_lines_raster(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override
     right  = pw - RIGHT_MARGIN
     bottom = ph - BOTTOM_MARGIN
     usable_w = max(1, right - left)
+    usable_h = max(1, bottom - top)
 
     Image, ImageDraw, ImageFont, ImageWin = _try_import_pillow()
     if not Image:
@@ -447,9 +506,18 @@ def _print_lines_raster(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override
     if not ttf:
         raise RuntimeError("No se encontró ninguna TTF en /fonts (DejaVu/Noto).")
 
+    # Threshold (intensidad): default recomendado para TM-U220
+    if raster_threshold is None:
+        raster_threshold = DEFAULT_RASTER_THRESHOLD
+    try:
+        raster_threshold = int(raster_threshold)
+    except Exception:
+        raster_threshold = DEFAULT_RASTER_THRESHOLD
+    raster_threshold = max(40, min(200, raster_threshold))
+
     # Tamaño de fuente
     if isinstance(font_px_override, int) and font_px_override >= 8:
-        font_px = font_px_override
+        font_px = max(AUTO_FONT_MIN_PX, min(font_px_override, AUTO_FONT_MAX_PX))
     else:
         font_px = _pick_font_height_fit_cols_pillow(usable_w, target_cols, ttf)
 
@@ -458,75 +526,91 @@ def _print_lines_raster(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override
     # Métricas de línea
     try:
         ascent, descent = font.getmetrics()
-        line_h = ascent + descent + 2  # pequeño extra
+        line_h = ascent + descent + 2
     except Exception:
-        line_h = int(font_px * 1.4)
+        line_h = int(font_px * 1.35)
 
-    hDC.StartDoc("Factura")
-    hDC.StartPage()
+    # --- Paso 1: “expandir” lines => wrapped lines reales en píxeles ---
+    # Creamos un canvas temporal para medir wraps
+    tmp_img = Image.new("L", (usable_w, line_h + 40), 255)
+    tmp_draw = ImageDraw.Draw(tmp_img)
 
-    y = top
+    expanded = []
     for raw_line in lines:
-        # Preparar canvas de medición para wrap
-        tmp_img = Image.new("RGB", (usable_w, line_h + 40), "white")
-        tmp_draw = ImageDraw.Draw(tmp_img)
+        if raw_line is None:
+            raw_line = ""
 
-        # Detectar si es par "K: V" y tratar de mantener una línea si cabe
-        k, v = _maybe_split_kv(raw_line)
+        # Mantener KV en una sola “fila lógica” (la dibujamos luego como 2 columnas)
+        k, v = _maybe_split_kv(str(raw_line))
         if k and v:
-            # Probar si entra en una sola línea con etiqueta izquierda y valor derecha
-            # Estrategia simple: medir ambos y dibujar por separado
-            # Línea en blanco para altura:
-            needed_h = line_h
-            if y + needed_h >= bottom:
-                hDC.EndPage(); hDC.StartPage(); y = TOP_MARGIN
-
-            # Render etiqueta (izquierda)
-            lbl = k
-            val = v
-            try:
-                lbl_w = tmp_draw.textlength(lbl, font=font)
-                val_w = tmp_draw.textlength(val, font=font)
-            except Exception:
-                lbl_w = tmp_draw.textbbox((0,0), lbl, font=font)[2]
-                val_w = tmp_draw.textbbox((0,0), val, font=font)[2]
-
-            mid = left + usable_w // 2
-            # Dibuja etiqueta
-            img_lbl = Image.new("RGB", (mid - left, line_h), "white")
-            d_lbl = ImageDraw.Draw(img_lbl)
-            d_lbl.text((0, 0), lbl, font=font, fill="black")
-            dib_lbl = ImageWin.Dib(img_lbl)
-            dib_lbl.draw(hDC.GetHandleOutput(), (left, y, mid, y + line_h))
-
-            # Dibuja valor alineado a la derecha
-            img_val = Image.new("RGB", (right - mid, line_h), "white")
-            d_val = ImageDraw.Draw(img_val)
-            # x para alinear derecha
-            x_val = max(0, (right - mid) - val_w)
-            d_val.text((x_val, 0), val, font=font, fill="black")
-            dib_val = ImageWin.Dib(img_val)
-            dib_val.draw(hDC.GetHandleOutput(), (mid, y, right, y + line_h))
-
-            y += needed_h
+            expanded.append(("KV", k, v))
             continue
 
-        # Word-wrap normal
-        wrapped = _wrap_text_by_width(raw_line, tmp_draw, font, usable_w)
+        wrapped = _wrap_text_by_width(str(raw_line), tmp_draw, font, usable_w)
         for piece in wrapped:
-            if y + line_h >= bottom:
-                hDC.EndPage(); hDC.StartPage(); y = TOP_MARGIN
-            img_line = Image.new("RGB", (usable_w, line_h), "white")
-            d_line = ImageDraw.Draw(img_line)
-            d_line.text((0, 0), piece, font=font, fill="black")
-            dib = ImageWin.Dib(img_line)
-            dib.draw(hDC.GetHandleOutput(), (left, y, right, y + line_h))
+            expanded.append(("TXT", piece))
+
+    # --- Paso 2: paginar por altura ---
+    # Reservamos un poco por seguridad de corte
+    max_lines_per_page = max(1, usable_h // line_h)
+
+    pages = []
+    cur = []
+    for item in expanded:
+        # Cada item consume 1 línea visual (KV o TXT)
+        if len(cur) >= max_lines_per_page:
+            pages.append(cur)
+            cur = []
+        cur.append(item)
+    if cur:
+        pages.append(cur)
+
+    # --- Paso 3: imprimir páginas ---
+    hDC.StartDoc("Factura")
+
+    for page in pages:
+        # Render página completa (L = grayscale)
+        page_img = Image.new("L", (usable_w, usable_h), 255)
+        d = ImageDraw.Draw(page_img)
+
+        y = 0
+        for item in page:
+            if item[0] == "KV":
+                _, k, v = item
+                mid = usable_w // 2
+
+                # izquierda
+                d.text((0, y), k, font=font, fill=0)
+
+                # derecha alineado a la derecha
+                try:
+                    vw = d.textlength(v, font=font)
+                except Exception:
+                    bbox = d.textbbox((0, 0), v, font=font)
+                    vw = (bbox[2] - bbox[0]) if bbox else 0
+                x_val = max(mid + 8, usable_w - int(vw))
+                d.text((x_val, y), v, font=font, fill=0)
+
+            else:
+                _, txt = item
+                d.text((0, y), txt, font=font, fill=0)
+
             y += line_h
+            if y >= usable_h:
+                break
 
-    hDC.EndPage()
+        # Binarizar para TM-U220:
+        # threshold más bajo => menos “bordes negros” => más suave y rápido
+        bw = page_img.point(lambda p: 0 if p < raster_threshold else 255, mode="1")
+
+        hDC.StartPage()
+        dib = ImageWin.Dib(bw)
+        dib.draw(hDC.GetHandleOutput(), (left, top, right, bottom))
+        hDC.EndPage()
+
     hDC.EndDoc()
-
     del hDC
+
 
 # ============================================================
 # Impresión GDI (opcional)
@@ -688,6 +772,14 @@ def print_ticket():
                 font_px_override = int(cfg["font_px"])
             except Exception:
                 font_px_override = None
+        
+        raster_threshold = None
+        if "raster_threshold" in cfg:
+            try:
+                raster_threshold = int(cfg["raster_threshold"])
+            except Exception:
+                raster_threshold = None
+
 
         # Nuevo: elegir render explícito
         render = str(cfg.get("render", RENDER_MODE_DEFAULT)).lower().strip()
@@ -708,6 +800,7 @@ def print_ticket():
                 target_cols=target_cols,
                 font_px_override=font_px_override,
                 force_raster=False,  # en GDI sólo cae a raster si falla Unicode
+                raster_threshold=raster_threshold
             )
 
         _send_cut_command_raw()
