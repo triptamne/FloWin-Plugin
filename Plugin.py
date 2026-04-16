@@ -1,4 +1,3 @@
-# Plugin.py
 from flask import Flask, request, jsonify
 from datetime import datetime
 from flask_cors import CORS
@@ -32,7 +31,6 @@ FONTS_DIR = resource_path("fonts")
 FONT_FILES_TRY = [
     os.path.join(FONTS_DIR, "DejaVuSans.ttf"),
     os.path.join(FONTS_DIR, "DejaVuSansMono.ttf"),
-    # Si tenés Noto, podés agregarla:
     os.path.join(FONTS_DIR, "NotoSans-Regular.ttf"),
 ]
 
@@ -55,18 +53,13 @@ DEFAULT_TARGET_COLS = 40
 # Perfil recomendado para Epson TM-U220 (impact/dot matrix)
 # ============================================================
 
-# Para TM-U220, 40 cols suele forzar letra muy pequeña. 33-35 cols suele verse mejor.
 DEFAULT_TARGET_COLS_U220 = 34
-
-# Mínimo de letra para el auto-fit (sube la legibilidad)
 AUTO_FONT_MIN_PX = 14
 AUTO_FONT_MAX_PX = 34
-
-# “Densidad” por raster (binarización):
-# - Más bajo => texto más “delgado/suave” (menos puntos) => suele imprimir más rápido
-# - Más alto => más negro (más puntos) => más lento
-# Rango recomendado: 60 - 140 (aprox)
 DEFAULT_RASTER_THRESHOLD = 95
+
+# Aumento visual para el nombre del producto
+PRODUCT_NAME_FONT_BUMP = 3
 
 def _is_tm_u220(printer_name: str) -> bool:
     try:
@@ -132,6 +125,30 @@ def _ensure_any_font_loaded():
         logging.warning("No se pudieron cargar TTF privadas DejaVu/Noto. GDI usará fuentes del sistema. (Raster no requiere instalación)")
 
 # ============================================================
+# Helpers de líneas con estilo
+# ============================================================
+def _make_line(text="", font_px=None, font_bump=0):
+    return {
+        "text": "" if text is None else str(text),
+        "font_px": font_px,
+        "font_bump": int(font_bump or 0),
+    }
+
+def _line_text(line):
+    if isinstance(line, dict):
+        return "" if line.get("text") is None else str(line.get("text"))
+    return "" if line is None else str(line)
+
+def _line_font_px(line, base_font_px):
+    if isinstance(line, dict):
+        explicit = line.get("font_px")
+        if isinstance(explicit, int) and explicit >= 8:
+            return max(AUTO_FONT_MIN_PX, min(explicit, AUTO_FONT_MAX_PX))
+        bump = int(line.get("font_bump", 0) or 0)
+        return max(AUTO_FONT_MIN_PX, min(int(base_font_px) + bump, AUTO_FONT_MAX_PX))
+    return max(AUTO_FONT_MIN_PX, min(int(base_font_px), AUTO_FONT_MAX_PX))
+
+# ============================================================
 # Helpers de impresión / medición (GDI)
 # ============================================================
 def _get_printable_metrics(hDC):
@@ -154,7 +171,6 @@ def _measure_text_width(hDC, text: str) -> int:
     size = hDC.GetTextExtent(text)
     return size[0]
 
-# Detector real de glifos usando GetGlyphIndicesW: marca 0xFFFF si falta
 def _has_glyphs_using_gdi(hDC, text: str) -> bool:
     try:
         GGI_MARK_NONEXISTING_GLYPHS = 0x0001
@@ -215,7 +231,6 @@ def _pick_font_height_fit_cols_gdi(hDC, face_name, printable_width_px, left_marg
 
     return max(AUTO_FONT_MIN_PX, min(best, AUTO_FONT_MAX_PX))
 
-
 def _draw_wrapped_gdi(hDC, text, left, top, right, bottom, extra_spacing=1):
     calc_rect = (left, top, right, bottom)
     hDC.DrawText(text, calc_rect, win32con.DT_LEFT | win32con.DT_WORDBREAK | win32con.DT_CALCRECT | win32con.DT_NOPREFIX)
@@ -250,6 +265,14 @@ def _format_crc(value):
         return f"₡{n:,.2f}"
     except Exception:
         return "₡0.00"
+
+def _format_monto_for_print(value):
+    try:
+        if value is None or value == "":
+            return ""
+        return _format_crc(value)
+    except Exception:
+        return str(value)
 
 def _get_precio_impuestos(prod):
     precio_imp = prod.get("PrecioImpuestos", None)
@@ -289,20 +312,21 @@ def _build_ticket_lines(data):
     lines = []
     sep = "-" * DEFAULT_TARGET_COLS
 
-    lines.append(empresa["nombre"])
-    lines.append(empresa["identificacion"])
-    lines.append(empresa["direccion"])
-    lines.append(sep)
-    lines.append(f"FECHA: {fecha}")
-    lines.append(f"CLIENTE: {cliente}")
+    nombreEmpresa = str(empresa["nombre"]) if empresa.get("nombre") else ""
+    lines.append(_make_line(nombreEmpresa, font_bump=2))
+    lines.append(_make_line(empresa["identificacion"]))
+    lines.append(_make_line(empresa["direccion"]))
+    lines.append(_make_line(sep))
+    lines.append(_make_line(f"FECHA: {fecha}"))
+    lines.append(_make_line(f"CLIENTE: {cliente}"))
     if identificacion:
-        lines.append(f"IDENTIFICACION: {identificacion}")
-    lines.append(sep)
-    lines.append(f"VENDEDOR: {vendedor}")
-    lines.append(f"FACTURA NO.: {noFactura}")
-    lines.append(sep)
-    lines.append("SR(a). ESTIMADO CLIENTE")
-    lines.append(sep)
+        lines.append(_make_line(f"IDENTIFICACION: {identificacion}"))
+    lines.append(_make_line(sep))
+    lines.append(_make_line(f"VENDEDOR: {vendedor}"))
+    lines.append(_make_line(f"FACTURA NO.: {noFactura}"))
+    lines.append(_make_line(sep))
+    lines.append(_make_line("SR(a). ESTIMADO CLIENTE"))
+    lines.append(_make_line(sep))
 
     subtotal = 0.0
     impuestos_totales = 0.0
@@ -322,12 +346,10 @@ def _build_ticket_lines(data):
         bonificacion     = prod.get("BonificacionCalculada", 0) or 0.0
         precioImpuestos  = _get_precio_impuestos(prod)
 
-        # --- Totales generales (como lo tenías) ---
         base_sin_iva = (precio_total / (1 + impuestos / 100)) if (not es_boni and impuestos) else (0 if es_boni else precio_total)
         subtotal          += base_sin_iva if not es_boni else 0
         impuestos_totales += (precio_total - base_sin_iva) if not es_boni else 0
 
-        # --- NUEVO: total con descuento aplicado por ítem ---
         try:
             total_con_desc = float(precio_total or 0) - float(monto_desc or 0)
             if total_con_desc < 0:
@@ -335,35 +357,32 @@ def _build_ticket_lines(data):
         except Exception:
             total_con_desc = 0.0
 
-        lines.append(f"{codigo}")
-        lines.append(f"{nombre}")
-        lines.append(f"UNID.: x{unidades}    FRACC.: x{fracciones}")
-        lines.append(f"PRECIO UNIT.: {_format_crc(precio_unitario)}    TOTAL FRACC.: {_format_crc(precio_fraccion)}")
-        lines.append(f"BONIF.: x{bonificacion}")
-        lines.append(f"DESC.: {float(descuento_pct):.2f}%    MONTO DESC.: {_format_crc(monto_desc)}")
+        lines.append(_make_line(f"{codigo}"))
+        # Nombre del producto con letra un poco más grande
+        lines.append(_make_line(f"{nombre}", font_bump=PRODUCT_NAME_FONT_BUMP))
+        lines.append(_make_line(f"UNID.: x{unidades}    FRACC.: x{fracciones}"))
+        lines.append(_make_line(f"PRECIO UNIT.: {_format_crc(precio_unitario)}    TOTAL FRACC.: {_format_crc(precio_fraccion)}"))
+        lines.append(_make_line(f"BONIF.: x{bonificacion}"))
+        lines.append(_make_line(f"DESC.: {float(descuento_pct):.2f}%    MONTO DESC.: {_format_crc(monto_desc)}"))
+        lines.append(_make_line(f"TOTAL CON DESC.: {_format_crc(total_con_desc)}"))
+        lines.append(_make_line(f"I.V.A.: {impuestos:.2f}%   MONTO I.V.A.: {_format_crc(precioImpuestos)}"))
+        lines.append(_make_line(f"TOTAL ÍTEM: {_format_crc(precio_total)}"))
+        lines.append(_make_line(""))
 
-        # ✅ Línea nueva solicitada
-        lines.append(f"TOTAL CON DESC.: {_format_crc(total_con_desc)}")
-
-        lines.append(f"I.V.A.: {impuestos:.2f}%   MONTO I.V.A.: {_format_crc(precioImpuestos)}")
-        lines.append(f"TOTAL ÍTEM: {_format_crc(precio_total)}")
-        lines.append("")
-
-    lines.append(sep)
-    lines.append(f"SUBTOTAL: {_format_crc(subtotal)}")
-    lines.append(f"I.V.A.: {_format_crc(impuestos_totales)}")
-    lines.append(sep)
-    lines.append(f"TOTAL: {_format_crc(total)}")
-    lines.append(f"METODO PAGO: {metodo_pago}")
-    lines.append(sep)
-    lines.append("¡GRACIAS POR SU COMPRA!")
-    lines.append("NO SE ACEPTAN DEVOLUCIONES")
-    lines.append("")
-    lines.append("Autorizado mediante resolucion No. DGT-R-")
-    lines.append("033-2019 del 20 de Junio del 2019.")
-    lines.append("Version 4.3")
+    lines.append(_make_line(sep))
+    lines.append(_make_line(f"SUBTOTAL: {_format_crc(subtotal)}"))
+    lines.append(_make_line(f"I.V.A.: {_format_crc(impuestos_totales)}"))
+    lines.append(_make_line(sep))
+    lines.append(_make_line(f"TOTAL: {_format_crc(total)}"))
+    lines.append(_make_line(f"METODO PAGO: {metodo_pago}"))
+    lines.append(_make_line(sep))
+    lines.append(_make_line("¡GRACIAS POR SU COMPRA!"))
+    lines.append(_make_line("NO SE ACEPTAN DEVOLUCIONES"))
+    lines.append(_make_line(""))
+    lines.append(_make_line("Autorizado mediante resolucion No. DGT-R-"))
+    lines.append(_make_line("033-2019 del 20 de Junio del 2019."))
+    lines.append(_make_line("Version 4.3"))
     return lines
-
 
 # ============================================================
 # Raster con Pillow (Unicode‐safe)
@@ -374,20 +393,18 @@ def _try_import_pillow():
         try:
             from PIL import Image as _Image, ImageDraw as _ImageDraw, ImageFont as _ImageFont, ImageWin as _ImageWin
             Image, ImageDraw, ImageFont, ImageWin = _Image, _ImageDraw, _ImageFont, _ImageWin
-        except Exception as e:
+        except Exception:
             logging.exception("Error importando Pillow")
             return None, None, None, None
     return Image, ImageDraw, ImageFont, ImageWin
-
 
 def _choose_ttf_for_pillow():
     for p in FONT_FILES_TRY:
         if os.path.isfile(p):
             return p
-    return None  # Pillow puede usar default bitmap, pero mejor abortar si no hay TTF
+    return None
 
 def _wrap_text_by_width(text, draw, font, max_width):
-    # Word-wrap midiendo ancho real en píxeles
     if not text:
         return [""]
     words = text.split(" ")
@@ -398,7 +415,6 @@ def _wrap_text_by_width(text, draw, font, max_width):
         try:
             width = draw.textlength(test, font=font)
         except Exception:
-            # fallback usando bbox
             bbox = draw.textbbox((0,0), test, font=font)
             width = (bbox[2]-bbox[0]) if bbox else 0
         if width <= max_width:
@@ -408,7 +424,6 @@ def _wrap_text_by_width(text, draw, font, max_width):
                 lines.append(cur)
                 cur = w
             else:
-                # palabra más larga que el ancho: quebrar por caracteres
                 tmp = ""
                 for ch in w:
                     t2 = tmp + ch
@@ -461,16 +476,16 @@ def _pick_font_height_fit_cols_pillow(usable_w, target_cols=DEFAULT_TARGET_COLS,
 
     return max(AUTO_FONT_MIN_PX, min(best, AUTO_FONT_MAX_PX))
 
+def _font_line_height_pillow(font, font_px):
+    try:
+        ascent, descent = font.getmetrics()
+        return ascent + descent + 2
+    except Exception:
+        return int(font_px * 1.35)
 
 def _print_lines_raster(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override=None, raster_threshold=None):
-    """
-    Raster optimizado:
-    - Renderiza texto a imágenes por página (no por línea)
-    - Controla “intensidad” con binarización (threshold)
-    """
     printer_name = win32print.GetDefaultPrinter()
 
-    # Perfil TM-U220: menos columnas por default => letra más grande
     if _is_tm_u220(printer_name) and target_cols == DEFAULT_TARGET_COLS:
         target_cols = DEFAULT_TARGET_COLS_U220
 
@@ -478,7 +493,7 @@ def _print_lines_raster(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override
     hDC.CreatePrinterDC(printer_name)
 
     try:
-        hDC.SetGraphicsMode(2)  # GM_ADVANCED
+        hDC.SetGraphicsMode(2)
     except Exception:
         pass
     try:
@@ -506,7 +521,6 @@ def _print_lines_raster(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override
     if not ttf:
         raise RuntimeError("No se encontró ninguna TTF en /fonts (DejaVu/Noto).")
 
-    # Threshold (intensidad): default recomendado para TM-U220
     if raster_threshold is None:
         raster_threshold = DEFAULT_RASTER_THRESHOLD
     try:
@@ -515,92 +529,102 @@ def _print_lines_raster(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override
         raster_threshold = DEFAULT_RASTER_THRESHOLD
     raster_threshold = max(40, min(200, raster_threshold))
 
-    # Tamaño de fuente
     if isinstance(font_px_override, int) and font_px_override >= 8:
-        font_px = max(AUTO_FONT_MIN_PX, min(font_px_override, AUTO_FONT_MAX_PX))
+        base_font_px = max(AUTO_FONT_MIN_PX, min(font_px_override, AUTO_FONT_MAX_PX))
     else:
-        font_px = _pick_font_height_fit_cols_pillow(usable_w, target_cols, ttf)
+        base_font_px = _pick_font_height_fit_cols_pillow(usable_w, target_cols, ttf)
 
-    font = ImageFont.truetype(ttf, font_px)
+    font_cache = {}
 
-    # Métricas de línea
-    try:
-        ascent, descent = font.getmetrics()
-        line_h = ascent + descent + 2
-    except Exception:
-        line_h = int(font_px * 1.35)
+    def get_font(px):
+        px = max(AUTO_FONT_MIN_PX, min(int(px), AUTO_FONT_MAX_PX))
+        if px not in font_cache:
+            font_cache[px] = ImageFont.truetype(ttf, px)
+        return font_cache[px]
 
-    # --- Paso 1: “expandir” lines => wrapped lines reales en píxeles ---
-    # Creamos un canvas temporal para medir wraps
-    tmp_img = Image.new("L", (usable_w, line_h + 40), 255)
+    tmp_img = Image.new("L", (usable_w, max(60, AUTO_FONT_MAX_PX * 3)), 255)
     tmp_draw = ImageDraw.Draw(tmp_img)
 
     expanded = []
     for raw_line in lines:
-        if raw_line is None:
-            raw_line = ""
+        text = _line_text(raw_line)
+        font_px = _line_font_px(raw_line, base_font_px)
+        font = get_font(font_px)
+        line_h = _font_line_height_pillow(font, font_px)
 
-        # Mantener KV en una sola “fila lógica” (la dibujamos luego como 2 columnas)
-        k, v = _maybe_split_kv(str(raw_line))
-        if k and v:
-            expanded.append(("KV", k, v))
+        if text == "":
+            expanded.append(("BLANK", "", font_px, line_h))
             continue
 
-        wrapped = _wrap_text_by_width(str(raw_line), tmp_draw, font, usable_w)
-        for piece in wrapped:
-            expanded.append(("TXT", piece))
+        k, v = _maybe_split_kv(text)
+        if k and v:
+            expanded.append(("KV", k, v, font_px, line_h))
+            continue
 
-    # --- Paso 2: paginar por altura ---
-    # Reservamos un poco por seguridad de corte
-    max_lines_per_page = max(1, usable_h // line_h)
+        wrapped = _wrap_text_by_width(text, tmp_draw, font, usable_w)
+        for piece in wrapped:
+            expanded.append(("TXT", piece, font_px, line_h))
 
     pages = []
     cur = []
+    cur_h = 0
+
     for item in expanded:
-        # Cada item consume 1 línea visual (KV o TXT)
-        if len(cur) >= max_lines_per_page:
+        item_h = item[-1]
+        if cur and (cur_h + item_h > usable_h):
             pages.append(cur)
             cur = []
+            cur_h = 0
         cur.append(item)
+        cur_h += item_h
+
     if cur:
         pages.append(cur)
 
-    # --- Paso 3: imprimir páginas ---
     hDC.StartDoc("Factura")
 
     for page in pages:
-        # Render página completa (L = grayscale)
         page_img = Image.new("L", (usable_w, usable_h), 255)
         d = ImageDraw.Draw(page_img)
 
         y = 0
         for item in page:
-            if item[0] == "KV":
-                _, k, v = item
-                mid = usable_w // 2
+            kind = item[0]
 
-                # izquierda
+            if kind == "BLANK":
+                _, _, font_px, line_h = item
+                y += line_h
+                continue
+
+            if kind == "KV":
+                _, k, v, font_px, line_h = item
+                font = get_font(font_px)
+                mid = usable_w // 2
                 d.text((0, y), k, font=font, fill=0)
 
-                # derecha alineado a la derecha
                 try:
                     vw = d.textlength(v, font=font)
                 except Exception:
                     bbox = d.textbbox((0, 0), v, font=font)
                     vw = (bbox[2] - bbox[0]) if bbox else 0
+
                 x_val = max(mid + 8, usable_w - int(vw))
                 d.text((x_val, y), v, font=font, fill=0)
+                y += line_h
+                continue
 
-            else:
-                _, txt = item
+            if kind == "TXT":
+                _, txt, font_px, line_h = item
+                font = get_font(font_px)
                 d.text((0, y), txt, font=font, fill=0)
+                y += line_h
+                continue
 
-            y += line_h
+            y += base_font_px
+
             if y >= usable_h:
                 break
 
-        # Binarizar para TM-U220:
-        # threshold más bajo => menos “bordes negros” => más suave y rápido
         bw = page_img.point(lambda p: 0 if p < raster_threshold else 255, mode="1")
 
         hDC.StartPage()
@@ -611,14 +635,17 @@ def _print_lines_raster(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override
     hDC.EndDoc()
     del hDC
 
-
 # ============================================================
 # Impresión GDI (opcional)
 # ============================================================
-def _print_lines_gdi(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override=None, force_raster=False):
-    # Si nos fuerzan raster (o default es raster), desviamos a raster directo
+def _print_lines_gdi(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override=None, force_raster=False, raster_threshold=None):
     if force_raster or RENDER_MODE_DEFAULT.lower() == "raster":
-        _print_lines_raster(lines, target_cols=target_cols, font_px_override=font_px_override)
+        _print_lines_raster(
+            lines,
+            target_cols=target_cols,
+            font_px_override=font_px_override,
+            raster_threshold=raster_threshold
+        )
         return
 
     printer_name = win32print.GetDefaultPrinter()
@@ -626,7 +653,7 @@ def _print_lines_gdi(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override=No
     hDC.CreatePrinterDC(printer_name)
 
     try:
-        hDC.SetGraphicsMode(2)  # GM_ADVANCED
+        hDC.SetGraphicsMode(2)
     except Exception:
         pass
     try:
@@ -647,57 +674,84 @@ def _print_lines_gdi(lines, target_cols=DEFAULT_TARGET_COLS, font_px_override=No
     right  = pw - RIGHT_MARGIN
     bottom = ph - BOTTOM_MARGIN
 
-    # Elegir familia que sí pinta acentos y ₡ (si el driver respeta TrueType)
     face = _select_face_that_renders_unicode(hDC)
 
-    # Altura de fuente
     if isinstance(font_px_override, int) and font_px_override >= 8:
-        font_px = font_px_override
+        base_font_px = font_px_override
     else:
-        font_px = _pick_font_height_fit_cols_gdi(hDC, face, pw, LEFT_MARGIN, RIGHT_MARGIN, target_cols)
+        base_font_px = _pick_font_height_fit_cols_gdi(hDC, face, pw, LEFT_MARGIN, RIGHT_MARGIN, target_cols)
 
-    font = _make_font(font_px, face)
-    old = hDC.SelectObject(font)
+    font_cache = {}
 
-    unicode_ok = _face_can_render_sample(hDC, face, font_px)
+    def get_font(px):
+        px = max(AUTO_FONT_MIN_PX, min(int(px), AUTO_FONT_MAX_PX))
+        if px not in font_cache:
+            font_cache[px] = _make_font(px, face)
+        return font_cache[px]
+
+    base_font = get_font(base_font_px)
+    old = hDC.SelectObject(base_font)
+
+    unicode_ok = _face_can_render_sample(hDC, face, base_font_px)
     raster_fallback = bool(not unicode_ok and RASTER_FALLBACK_ENABLED)
 
     if raster_fallback:
-        logging.warning("GDI no garantizó Unicode; activando fallback raster por línea.")
+        logging.warning("GDI no garantizó Unicode; activando raster completo.")
+        hDC.SelectObject(old)
+        hDC.EndPage()
+        hDC.EndDoc()
+        del hDC
+        _print_lines_raster(
+            lines,
+            target_cols=target_cols,
+            font_px_override=font_px_override,
+            raster_threshold=raster_threshold
+        )
+        return
+
     y = top
-    for line in lines:
-        if y >= (bottom - 4):
-            hDC.EndPage(); hDC.StartPage(); y = TOP_MARGIN
+    current_font = base_font
 
-        if not line:
-            measure = (left, y, right, bottom)
-            hDC.DrawText("Xg", measure, win32con.DT_LEFT | win32con.DT_SINGLELINE | win32con.DT_CALCRECT)
-            y = measure[3] + 1
-            continue
+    try:
+        for raw_line in lines:
+            text = _line_text(raw_line)
+            line_font_px = _line_font_px(raw_line, base_font_px)
+            desired_font = get_font(line_font_px)
 
-        if raster_fallback:
-            # Render con Pillow por línea (si llegara a fallar Pillow, caemos a GDI)
+            if current_font is not desired_font:
+                hDC.SelectObject(desired_font)
+                current_font = desired_font
+
+            if y >= (bottom - max(8, line_font_px)):
+                hDC.EndPage()
+                hDC.StartPage()
+                y = TOP_MARGIN
+                hDC.SelectObject(current_font)
+
+            if text == "":
+                measure = (left, y, right, bottom)
+                hDC.DrawText("Xg", measure, win32con.DT_LEFT | win32con.DT_SINGLELINE | win32con.DT_CALCRECT)
+                y = measure[3] + 1
+                continue
+
+            k, v = _maybe_split_kv(text)
+            if k and v:
+                y = _draw_kv_singleline(hDC, k, v, left, y, right, bottom)
+            else:
+                y = _draw_wrapped_gdi(hDC, text, left, y, right, bottom, extra_spacing=1)
+    finally:
+        try:
+            hDC.SelectObject(old)
+        except Exception:
+            pass
+        hDC.EndPage()
+        hDC.EndDoc()
+        for f in font_cache.values():
             try:
-                _print_lines_raster([line], target_cols=target_cols, font_px_override=font_px)
-                # la llamada anterior abre/cierra doc… mejor no anidar.
-                # En lugar de mezclar páginas, hacemos wrap GDI si Pillow no se usa aquí.
-                # Por simplicidad, si estamos en fallback, NO mezclamos y seguimos con GDI:
-                pass
+                del f
             except Exception:
                 pass
-
-        k, v = _maybe_split_kv(line)
-        if k and v:
-            y = _draw_kv_singleline(hDC, k, v, left, y, right, bottom)
-        else:
-            y = _draw_wrapped_gdi(hDC, line, left, y, right, bottom, extra_spacing=1)
-
-    hDC.SelectObject(old)
-    hDC.EndPage()
-    hDC.EndDoc()
-
-    del font
-    del hDC
+        del hDC
 
 # ============================================================
 # Corte ESC/POS (opcional)
@@ -709,7 +763,7 @@ def _send_cut_command_raw():
         try:
             win32print.StartDocPrinter(hPrinter, 1, ("Cut", None, "RAW"))
             win32print.StartPagePrinter(hPrinter)
-            win32print.WritePrinter(hPrinter, b'\x1D\x56\x42\x00')  # GS V B 0
+            win32print.WritePrinter(hPrinter, b'\x1D\x56\x42\x00')
             win32print.EndPagePrinter(hPrinter)
             win32print.EndDocPrinter(hPrinter)
         finally:
@@ -718,9 +772,6 @@ def _send_cut_command_raw():
         pass
 
 def _build_anular_factura_lines(payload):
-    # Soporta ambos formatos:
-    # 1) { "IdFactura":..., "ReferenciaFactElectronica":..., "Motivo":..., "config": {...} }
-    # 2) { "data": { ... }, "config": {...} }  (tu caso actual con Axios)
     if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
         data = payload.get("data") or {}
     else:
@@ -729,22 +780,33 @@ def _build_anular_factura_lines(payload):
     id_factura = data.get("IdFactura", "")
     ref_nc     = data.get("ReferenciaFactElectronica", "")
     motivo     = data.get("Motivo", "")
+    monto      = data.get("Monto", "")
 
-    # Si alguno viene vacío imprime en blanco
     id_factura = "" if id_factura is None else str(id_factura)
     ref_nc     = "" if ref_nc is None else str(ref_nc)
     motivo     = "" if motivo is None else str(motivo)
 
+    monto_str = ""
+    if monto not in (None, ""):
+        try:
+            monto_str = _format_monto_for_print(monto)
+        except Exception:
+            monto_str = str(monto)
+
     sep = "*" * DEFAULT_TARGET_COLS
 
     lines = [
-        sep,
-        "Anulación Factura",
-        f"Id: {id_factura}",
-        f"Referencia nota crédito: {ref_nc}",
-        f"Motivo: {motivo}",
-        sep,
+        _make_line(sep),
+        _make_line("Anulación Factura"),
+        _make_line(f"Id: {id_factura}"),
+        _make_line(f"Referencia nota crédito: {ref_nc}"),
+        _make_line(f"Motivo: {motivo}"),
     ]
+
+    if monto_str:
+        lines.append(_make_line(f"Monto: {monto_str}"))
+
+    lines.append(_make_line(sep))
     return lines
 
 # ============================================================
@@ -757,7 +819,7 @@ CORS(app, supports_credentials=True, origins=["*"])
 def print_ticket():
     data = request.get_json() or {}
     try:
-        _ensure_any_font_loaded()  # solo afecta a GDI
+        _ensure_any_font_loaded()
 
         cfg = data.get("config", {}) if isinstance(data.get("config", {}), dict) else {}
         target_cols = DEFAULT_TARGET_COLS
@@ -766,13 +828,14 @@ def print_ticket():
                 target_cols = max(24, min(60, int(cfg["cols"])))
             except Exception:
                 pass
+
         font_px_override = None
         if "font_px" in cfg:
             try:
                 font_px_override = int(cfg["font_px"])
             except Exception:
                 font_px_override = None
-        
+
         raster_threshold = None
         if "raster_threshold" in cfg:
             try:
@@ -780,8 +843,6 @@ def print_ticket():
             except Exception:
                 raster_threshold = None
 
-
-        # Nuevo: elegir render explícito
         render = str(cfg.get("render", RENDER_MODE_DEFAULT)).lower().strip()
         force_raster = bool(cfg.get("force_raster", False))
         use_raster = force_raster or (render == "raster")
@@ -792,14 +853,15 @@ def print_ticket():
             _print_lines_raster(
                 lines,
                 target_cols=target_cols,
-                font_px_override=font_px_override
+                font_px_override=font_px_override,
+                raster_threshold=raster_threshold
             )
         else:
             _print_lines_gdi(
                 lines,
                 target_cols=target_cols,
                 font_px_override=font_px_override,
-                force_raster=False,  # en GDI sólo cae a raster si falla Unicode
+                force_raster=False,
                 raster_threshold=raster_threshold
             )
 
@@ -816,9 +878,8 @@ def print_ticket():
 def print_anular_factura():
     payload = request.get_json() or {}
     try:
-        _ensure_any_font_loaded()  # solo afecta a GDI
+        _ensure_any_font_loaded()
 
-        # ✅ config puede venir en root del payload (como tu PrintTicket) o dentro de payload.data
         cfg = {}
         if isinstance(payload.get("config"), dict):
             cfg = payload.get("config") or {}
@@ -839,17 +900,34 @@ def print_anular_factura():
             except Exception:
                 font_px_override = None
 
+        raster_threshold = None
+        if "raster_threshold" in cfg:
+            try:
+                raster_threshold = int(cfg["raster_threshold"])
+            except Exception:
+                raster_threshold = None
+
         render = str(cfg.get("render", RENDER_MODE_DEFAULT)).lower().strip()
         force_raster = bool(cfg.get("force_raster", False))
         use_raster = force_raster or (render == "raster")
 
-        # ✅ ahora pasamos el payload completo, el builder ya sabe sacar payload.data si existe
         lines = _build_anular_factura_lines(payload)
 
         if use_raster:
-            _print_lines_raster(lines, target_cols=target_cols, font_px_override=font_px_override)
+            _print_lines_raster(
+                lines,
+                target_cols=target_cols,
+                font_px_override=font_px_override,
+                raster_threshold=raster_threshold
+            )
         else:
-            _print_lines_gdi(lines, target_cols=target_cols, font_px_override=font_px_override, force_raster=False)
+            _print_lines_gdi(
+                lines,
+                target_cols=target_cols,
+                font_px_override=font_px_override,
+                force_raster=False,
+                raster_threshold=raster_threshold
+            )
 
         _send_cut_command_raw()
 
